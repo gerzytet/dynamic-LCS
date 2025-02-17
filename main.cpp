@@ -5,6 +5,10 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <string_view>
+#include <cmath>
+#include <algorithm>
 
 using namespace sdsl;
 
@@ -15,9 +19,13 @@ using std::string;
 using std::unordered_map;
 using std::vector;
 using std::unordered_set;
+using std::pair;
+using std::string_view;
+using std::min;
+using std::reverse;
 
 using Node = sdsl::bp_interval<sdsl::int_vector_size_type>;
-using CSA = cst_sct3<>;
+using CST = cst_sct3<>;
 
 struct TwoSet {
     unordered_map<int, int> counts;
@@ -58,10 +66,10 @@ struct HIAResult {
     }
 };
 
-typedef long(*label_mapper)(const CSA &T, Node node);
+typedef long(*label_mapper)(const CST &T, Node node);
 
 template<label_mapper mapper>
-void flip_subtree_excluding_child(const CSA &T, TwoSet &ts, Node root, Node child, int sign) {
+void flip_subtree_excluding_child(const CST &T, TwoSet &ts, Node root, Node child, int sign) {
     long left = T.lb(root);
     long right = T.rb(root);
 
@@ -80,7 +88,7 @@ void flip_subtree_excluding_child(const CSA &T, TwoSet &ts, Node root, Node chil
 }
 
 template<label_mapper T1_mapper, label_mapper T2_mapper>
-HIAResult dummy_HIA(CSA &T1, CSA &T2, Node u, Node v) {
+HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v) {
     Node t2_root = T2.root();
 
     vector<Node> v_path;
@@ -142,7 +150,7 @@ HIAResult dummy_HIA(CSA &T1, CSA &T2, Node u, Node v) {
 }
 
 template<label_mapper T1_mapper, label_mapper T2_mapper>
-bool is_induced(CSA &T1, CSA &T2, Node u, Node v) {
+bool is_induced(CST &T1, CST &T2, Node u, Node v) {
     TwoSet ts;
     long left = T1.lb(u);
     long right = T1.rb(u);
@@ -163,34 +171,71 @@ bool is_induced(CSA &T1, CSA &T2, Node u, Node v) {
     return ts.twos > 0;
 }
 
-int main() {
-    cst_sct3<> cst;
-    std::string s = "abacad";
-    construct_im(cst, s, 1);
+bool can_consume(const CST &T, string_view s) {
+    int index = 0;
+    Node node = T.root();
+    while (index < s.size()) {
+        Node child = T.child(node, s[index]);
+        if (child == T.root()) {
+            return false;
+        }
+        long limit = min(T.depth(child), s.size());
+        while (index < limit) {
+            if (s[index] == T.edge(child, index+1)) {
+                index++;
+            } else {
+                return false;
+            }
+        }
+        node = child;
+    }
+    return true;
+}
 
-    uint64_t max_depth = 40;
+string fuse_substrings(const CST &T, const CST &T_R, string_view u, string_view v) {
+    string best_substring;
+    if (u.size() > v.size()) {
+        best_substring = u;
+    } else {
+        best_substring = v;
+    }
+    for (long u_start = 0; u_start < u.size(); u_start++) {
+        long u_length = u.size() - u_start;
+        string_view u_part = u.substr(u_start, u_length);
+        for (long v_end = 0; v_end < v.size(); v_end++) {
+            long v_length = v_end+1;
+            string_view v_part = v.substr(0, v_length);
+            if (u_length + v_length <= best_substring.size()) {
+                continue;
+            }
 
-    // use the DFS iterator to traverse `cst`
-    for (auto it=cst.begin(); it!=cst.end(); ++it) {
-        if (it.visit() == 1) {  // node visited the first time
-            auto v = *it;       // get the node by dereferencing the iterator
-            if (cst.depth(v) <= max_depth) {   // if depth node is <= max_depth
-                // process node, e.g. output it in format d-[lb, rb]
-                string s;
-                auto depth = cst.depth(v);
-                for (int i = 1; i <= depth; i++) {
-                    auto res = cst.edge(v, i);
-                    if (res == 0) {
-                        res = '$';
-                    }
-                    s += res;
-                }
-
-                cout<<depth<<"-["<<cst.lb(v)<< ","<<cst.rb(v)<<"]-"<<s<<endl;
-
-            } else { // skip the subtree otherwise
-                it.skip_subtree();
+            string test_str = string(u_part) + string(v_part);
+            if (can_consume(T, test_str)) {
+                best_substring = test_str;
             }
         }
     }
+
+    return best_substring;
+}
+
+void test_fuse_substrings() {
+    CST cst;
+    string s = "abacadabra";
+    construct_im(cst, s, 1);
+
+    CST cst_r;
+    string s_r = s;
+    reverse(s_r.begin(), s_r.end());
+    construct_im(cst_r, s_r, 1);
+
+    cout << "Test 1: " << fuse_substrings(cst, cst_r, "abr", "aca") << endl;
+    cout << "Test 2: " << fuse_substrings(cst, cst_r, "ba", "cada") << endl;
+    cout << "Test 3: " << fuse_substrings(cst, cst_r, "c", "d") << endl;
+    cout << "Test 4: " << fuse_substrings(cst, cst_r, "cad", "aba") << endl;
+    cout << "Test 5: " << fuse_substrings(cst, cst_r, "ca", "br") << endl;
+}
+
+int main() {
+    test_fuse_substrings();
 }
