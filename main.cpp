@@ -123,12 +123,13 @@ HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long length) {
     long twos = 0;
     //v_temp is the root at this point
     for (long i = T2.lb(v_temp); i <= T2.rb(v_temp); i++) {
-        ts.add(i);
+        ts.add(T2_mapper(T2, {i, i}, length));
     }
 
     Node u_temp = u;
-    //u_temp is a leaf at this point
-    ts.add(T1.lb(u_temp));
+    for (long i = T1.lb(u_temp); i <= T1.rb(u_temp); i++) {
+        ts.add(T1_mapper(T1, {i, i}, length));
+    }
 
     Node HIA_1 = u;
     Node HIA_2 = v_temp;
@@ -282,6 +283,8 @@ pair<long, long> fuse_substrings_HIA(CST &T, CST &T_R, const leaf_index &li, con
         T_R, T, u_rev_node, v_node, s.size()
     );
 
+    cout << "sum" << result.sum << '\n';
+
     Node u_new_node = result.HIA_1;
     long u_included = T_R.depth(u_rev_node) - T_R.depth(u_new_node);
     if (u_new_node != T_R.root() && T_R.depth(T_R.parent(u_new_node))) {
@@ -312,15 +315,20 @@ void test_fuse_substrings() {
     ////////////0123456789
     string s = "abacadabra";
     construct_im(cst, s, 1);
+    leaf_index li = build_leaf_index(cst, s.size());
 
     CST cst_r;
     string s_r = s;
     reverse(s_r.begin(), s_r.end());
     construct_im(cst_r, s_r, 1);
+    leaf_index li_r = build_leaf_index(cst_r, s.size());
     int testnum = 0;
     auto test = [&](Slice u, Slice v) {
         testnum++;
-        cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << fuse_substrings(cst, cst_r, s, u, v) << '\n';
+        auto ans = fuse_substrings(cst, cst_r, s, u, v);
+        cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
+        ans = fuse_substrings_HIA(cst, cst_r, li, li_r, s, u, v);
+        cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
     };
 
     test({6, 8}, {2, 4});
