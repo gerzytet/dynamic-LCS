@@ -102,7 +102,7 @@ void flip_subtree_excluding_child(const CST &T, TwoSet &ts, Node root, Node chil
 }
 
 template<label_mapper T1_mapper, label_mapper T2_mapper>
-HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long length) {
+HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long u_length, long v_length, long length) {
     Node t2_root = T2.root();
 
     vector<Node> v_path;
@@ -133,11 +133,11 @@ HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long length) {
 
     Node HIA_1 = u;
     Node HIA_2 = v_temp;
-    long HIA_sum = T1.depth(u) + T2.depth(v_temp);
+    long HIA_sum = min((uint64_t)u_length, T1.depth(u)) + min((uint64_t)v_length, T2.depth(v_temp));
 
     while (true) {
         if (ts.twos > 0) {
-            long sum = T1.depth(u_temp) + T2.depth(v_temp);
+            long sum = min((uint64_t)u_length, T1.depth(u_temp)) + min((uint64_t)v_length, T2.depth(v_temp));
             if (sum > HIA_sum) {
                 HIA_1 = u_temp;
                 HIA_2 = v_temp;
@@ -259,10 +259,18 @@ leaf_index build_leaf_index(const CST &T, long size) {
 //if this would put us in the middle of a path, return the node at the end of the path.
 Node go_up(const CST &T, Node leaf, long min_depth) {
     Node node = leaf;
-    while (node != T.root() && T.depth(T.parent(leaf)) >= min_depth) {
+    while (node != T.root() && T.depth(T.parent(node)) >= min_depth) {
         node = T.parent(node);
     }
     return node;
+}
+
+void debug_print_node(const CST &T, Node node) {
+    for (int i = 0; i < T.depth(node); i++) {
+        char c = T.edge(node, i+1);
+        cout << (c ? c : '$');
+    }
+    cout << '\n';
 }
 
 pair<long, long> fuse_substrings_HIA(CST &T, CST &T_R, const leaf_index &li, const leaf_index &li_r, const string &s, Slice u, Slice v) {
@@ -272,38 +280,46 @@ pair<long, long> fuse_substrings_HIA(CST &T, CST &T_R, const leaf_index &li, con
     //then the depth of the leaf node in the reversed suffix tree
     long u_rev_leaf_depth = s.size() - u_start_rev + 1;
 
-    Node u_rev_leaf = T_R.inv_id(li_r[u_rev_leaf_depth]);
+    Node u_rev_leaf = T_R.inv_id(li_r[u_rev_leaf_depth-1]);
+    debug_print_node(T_R, u_rev_leaf);
     Node u_rev_node = go_up(T_R, u_rev_leaf, u.size());
+    debug_print_node(T_R, u_rev_node);
 
-    long v_leaf_depth = s.size() - v.end + 1;
-    Node v_leaf = T.inv_id(li[v_leaf_depth]);
+
+    long v_leaf_depth = s.size() - v.start + 1;
+    Node v_leaf = T.inv_id(li[v_leaf_depth-1]);
+    debug_print_node(T, v_leaf);
     Node v_node = go_up(T, v_leaf, v.size());
+    debug_print_node(T, v_node);
 
-    HIAResult result = dummy_HIA<cst_label_mapper, reverse_cst_label_mapper>(
-        T_R, T, u_rev_node, v_node, s.size()
+    HIAResult result = dummy_HIA<reverse_cst_label_mapper, cst_label_mapper>(
+        T_R, T, u_rev_node, v_node, u.size(), v.size(), s.size()
     );
 
     cout << "sum" << result.sum << '\n';
 
     Node u_new_node = result.HIA_1;
-    long u_included = T_R.depth(u_rev_node) - T_R.depth(u_new_node);
+    /*long u_included = T_R.depth(u_rev_node) - T_R.depth(u_new_node);
     if (u_new_node != T_R.root() && T_R.depth(T_R.parent(u_new_node))) {
         long u_not_included = u.size() - u_included;
         long path_length = T_R.depth(u_new_node) - T_R.depth(T_R.parent(u_new_node));
         if (u_not_included < path_length) {
             u_included += u_not_included;
         }
-    }
+    }*/
+    long u_included = min(T_R.depth(u_new_node), (uint64_t)u.size());
 
     Node v_new_node = result.HIA_2;
-    long v_included = T.depth(v_node) - T.depth(v_new_node);
+    /*long v_included = T.depth(v_node) - T.depth(v_new_node);
     if (v_new_node != T.root() && T.depth(T.parent(v_new_node))) {
         long v_not_included = v.size() - v_included;
         long path_length = T.depth(v_new_node) - T.depth(T.parent(v_new_node));
         if (v_not_included < path_length) {
             v_included += v_not_included;
         }
-    }
+    }*/
+   long v_included = min(T.depth(v_new_node), (uint64_t)v.size());
+
 
     return {u_included, v_included};
 }
