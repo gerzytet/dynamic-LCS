@@ -27,6 +27,20 @@ using std::reverse;
 using Node = sdsl::bp_interval<sdsl::int_vector_size_type>;
 using CST = cst_sct3<>;
 
+//both ends inclusive!
+class Slice {
+    public:
+    long start, end;
+
+    inline long size() const {
+        return end - start + 1;
+    }
+
+    string apply(string s) const {
+        return s.substr(start, size());
+    }
+};
+
 struct TwoSet {
     unordered_map<int, int> counts;
     long twos = 0;
@@ -66,10 +80,10 @@ struct HIAResult {
     }
 };
 
-typedef long(*label_mapper)(const CST &T, Node node);
+typedef long(*label_mapper)(const CST &T, Node node, long length);
 
 template<label_mapper mapper>
-void flip_subtree_excluding_child(const CST &T, TwoSet &ts, Node root, Node child, int sign) {
+void flip_subtree_excluding_child(const CST &T, TwoSet &ts, Node root, Node child, int sign, long length) {
     long left = T.lb(root);
     long right = T.rb(root);
 
@@ -78,17 +92,17 @@ void flip_subtree_excluding_child(const CST &T, TwoSet &ts, Node root, Node chil
 
     for (long i = left; i < c_left; i++) {
         Node n = {i, i};
-        ts.update(mapper(T, n), sign);
+        ts.update(mapper(T, n, length), sign);
     }
 
     for (long i = c_right+1; i <= right; i++) {
         Node n = {i, i};
-        ts.update(mapper(T, n), sign);
+        ts.update(mapper(T, n, length), sign);
     }
 }
 
 template<label_mapper T1_mapper, label_mapper T2_mapper>
-HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v) {
+HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long length) {
     Node t2_root = T2.root();
 
     vector<Node> v_path;
@@ -134,14 +148,14 @@ HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v) {
             }
             Node v_child = *v_path_iter;
             v_path_iter++;
-            flip_subtree_excluding_child<T2_mapper>(T2, ts, v_temp, v_child, -1);
+            flip_subtree_excluding_child<T2_mapper>(T2, ts, v_temp, v_child, -1, length);
             v_temp = v_child;
         } else {
             if (u_temp == T1.root()) {
                 break;
             }
             Node u_parent = T1.parent(u_temp);
-            flip_subtree_excluding_child<T1_mapper>(T1, ts, u_parent, u_temp, 1);
+            flip_subtree_excluding_child<T1_mapper>(T1, ts, u_parent, u_temp, 1, length);
             u_temp = u_parent;
         }
     }
@@ -150,14 +164,14 @@ HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v) {
 }
 
 template<label_mapper T1_mapper, label_mapper T2_mapper>
-bool is_induced(CST &T1, CST &T2, Node u, Node v) {
+bool is_induced(CST &T1, CST &T2, Node u, Node v, long length) {
     TwoSet ts;
     long left = T1.lb(u);
     long right = T1.rb(u);
 
     for (long i = left; i <= right; i++) {
         Node n = {i, i};
-        ts.add(T1_mapper(T1, n));
+        ts.add(T1_mapper(T1, n, length));
     }
 
     left = T2.lb(v);
@@ -165,62 +179,137 @@ bool is_induced(CST &T1, CST &T2, Node u, Node v) {
 
     for (long i = left; i <= right; i++) {
         Node n = {i, i};
-        ts.add(T2_mapper(T2, n));
+        ts.add(T2_mapper(T2, n, length));
     }
 
     return ts.twos > 0;
 }
 
-bool can_consume(const CST &T, string_view s) {
-    int index = 0;
+long longest_consume(const CST &T, const string &s) {
+    long index = 0;
     Node node = T.root();
     while (index < s.size()) {
         Node child = T.child(node, s[index]);
         if (child == T.root()) {
-            return false;
+            return index;
         }
         long limit = min(T.depth(child), s.size());
         while (index < limit) {
             if (s[index] == T.edge(child, index+1)) {
                 index++;
             } else {
-                return false;
+                return index;
             }
         }
         node = child;
     }
-    return true;
+    return index;
 }
 
-string fuse_substrings(const CST &T, const CST &T_R, string_view u, string_view v) {
-    string best_substring;
+//first element: num characters included from u.  second element for v.
+pair<long, long> fuse_substrings(const CST &T, const CST &T_R, const string &s, Slice u, Slice v) {
+    pair<long, long> ans;
     if (u.size() > v.size()) {
-        best_substring = u;
+        ans = {u.size(), 0};
     } else {
-        best_substring = v;
+        ans = {0, v.size()};
     }
-    for (long u_start = 0; u_start < u.size(); u_start++) {
-        long u_length = u.size() - u_start;
-        string_view u_part = u.substr(u_start, u_length);
-        for (long v_end = 0; v_end < v.size(); v_end++) {
-            long v_length = v_end+1;
-            string_view v_part = v.substr(0, v_length);
-            if (u_length + v_length <= best_substring.size()) {
-                continue;
-            }
+    for (long u_start = u.start; u_start <= u.end; u_start++) {
+        Slice u_part{u_start, u.end};
 
-            string test_str = string(u_part) + string(v_part);
-            if (can_consume(T, test_str)) {
-                best_substring = test_str;
-            }
+        if (u_part.size() + v.size() <= ans.first + ans.second) {
+            continue;
+        }
+
+        string test_str = u_part.apply(s) + v.apply(s);
+        long l = longest_consume(T, test_str);
+        if (l > ans.first + ans.second) {
+            ans = {u_part.size(), l-u_part.size()};
+        }
+
+    }
+
+    return ans;
+}
+
+long cst_label_mapper(const CST &T, Node node, long size) {
+    return size - T.depth(node) + 2;
+}
+
+long reverse_cst_label_mapper(const CST &T, Node node, long size) {
+    return T.depth(node);
+}
+
+using leaf_index = int_vector<sizeof(int_vector_size_type)*8>;
+
+//build an index that lets us quickly find the leaf of the given depth
+//returns an array where A[i] = the if of the leaf of depth i+1
+leaf_index build_leaf_index(const CST &T, long size) {
+    leaf_index index(size+1);
+    for (Node node : T) {
+        if (T.is_leaf(node)) {
+            index[T.depth(node)-1] = T.id(node);
+        }
+    }
+    return index;
+}
+
+//return the node resulting from finding the lowest depth >= min_depth in the path from the root to the leaf
+//if this would put us in the middle of a path, return the node at the end of the path.
+Node go_up(const CST &T, Node leaf, long min_depth) {
+    Node node = leaf;
+    while (node != T.root() && T.depth(T.parent(leaf)) >= min_depth) {
+        node = T.parent(node);
+    }
+    return node;
+}
+
+pair<long, long> fuse_substrings_HIA(CST &T, CST &T_R, const leaf_index &li, const leaf_index &li_r, const string &s, Slice u, Slice v) {
+    //figure out the start position of u in the reversed string, 0 indexed
+    long u_start_rev = s.size() - u.end - 1;
+
+    //then the depth of the leaf node in the reversed suffix tree
+    long u_rev_leaf_depth = s.size() - u_start_rev + 1;
+
+    Node u_rev_leaf = T_R.inv_id(li_r[u_rev_leaf_depth]);
+    Node u_rev_node = go_up(T_R, u_rev_leaf, u.size());
+
+    long v_leaf_depth = s.size() - v.end + 1;
+    Node v_leaf = T.inv_id(li[v_leaf_depth]);
+    Node v_node = go_up(T, v_leaf, v.size());
+
+    HIAResult result = dummy_HIA<cst_label_mapper, reverse_cst_label_mapper>(
+        T_R, T, u_rev_node, v_node, s.size()
+    );
+
+    Node u_new_node = result.HIA_1;
+    long u_included = T_R.depth(u_rev_node) - T_R.depth(u_new_node);
+    if (u_new_node != T_R.root() && T_R.depth(T_R.parent(u_new_node))) {
+        long u_not_included = u.size() - u_included;
+        long path_length = T_R.depth(u_new_node) - T_R.depth(T_R.parent(u_new_node));
+        if (u_not_included < path_length) {
+            u_included += u_not_included;
         }
     }
 
-    return best_substring;
+    Node v_new_node = result.HIA_2;
+    long v_included = T.depth(v_node) - T.depth(v_new_node);
+    if (v_new_node != T.root() && T.depth(T.parent(v_new_node))) {
+        long v_not_included = v.size() - v_included;
+        long path_length = T.depth(v_new_node) - T.depth(T.parent(v_new_node));
+        if (v_not_included < path_length) {
+            v_included += v_not_included;
+        }
+    }
+
+    return {u_included, v_included};
 }
+
 
 void test_fuse_substrings() {
     CST cst;
+
+    ////////////0123456789
     string s = "abacadabra";
     construct_im(cst, s, 1);
 
@@ -228,12 +317,22 @@ void test_fuse_substrings() {
     string s_r = s;
     reverse(s_r.begin(), s_r.end());
     construct_im(cst_r, s_r, 1);
+    int testnum = 0;
+    auto test = [&](Slice u, Slice v) {
+        testnum++;
+        cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << fuse_substrings(cst, cst_r, s, u, v) << '\n';
+    };
 
-    cout << "Test 1: " << fuse_substrings(cst, cst_r, "abr", "aca") << endl;
+    test({6, 8}, {2, 4});
+    test({1, 2}, {3, 6});
+    test({3, 3}, {5, 5});
+    test({3, 5}, {0, 2});
+    test({3, 4}, {7, 8});
+    /*cout << "Test 1: " << fuse_substrings(cst, cst_r, "abr", "aca") << endl;
     cout << "Test 2: " << fuse_substrings(cst, cst_r, "ba", "cada") << endl;
     cout << "Test 3: " << fuse_substrings(cst, cst_r, "c", "d") << endl;
     cout << "Test 4: " << fuse_substrings(cst, cst_r, "cad", "aba") << endl;
-    cout << "Test 5: " << fuse_substrings(cst, cst_r, "ca", "br") << endl;
+    cout << "Test 5: " << fuse_substrings(cst, cst_r, "ca", "br") << endl;*/
 }
 
 int main() {
