@@ -43,6 +43,10 @@ class Slice {
     string apply(string s) const {
         return s.substr(start, size());
     }
+
+    bool is_inbounds(int max) const {
+        return start <= end && end <= max;
+    }
 };
 
 struct TwoSet {
@@ -71,6 +75,28 @@ struct TwoSet {
         }
     }
 };
+
+std::minstd_rand0 random_gen;
+
+//both sides inclusive
+int randint(int a, int b) {
+    std::uniform_int_distribution<int> distribution(a, b);
+    return distribution(random_gen);
+}
+
+Slice randslice(int length) {
+    int a = randint(0, length-1);
+    int b = randint(0, length-1);
+    return {min(a, b), max(a, b)};
+}
+
+string randstring(int length, char min, char max) {
+    string ans = "";
+    for (int i = 0; i < length; i++) {
+        ans += randint(min, max);
+    }
+    return ans;
+}
 
 struct HIAResult {
     Node HIA_1;
@@ -209,6 +235,67 @@ long longest_consume(const CST &T, const string &s) {
         node = child;
     }
     return index;
+}
+
+Slice longest_consume_slice(const CST &T, const string &s, long len) {
+    long index = 0;
+    Node node = T.root();
+    while (index < s.size()) {
+        Node child = T.child(node, s[index]);
+        if (child == T.root()) {
+            if (index == 0) {
+                return {-1, -1};
+            }
+            long start = len - T.depth(T.leftmost_leaf(node)) + 1;
+            long end = start + index - 1;
+            return {start, end};
+        }
+        long limit = min(T.depth(child), s.size());
+        while (index < limit) {
+            if (s[index] == T.edge(child, index+1)) {
+                index++;
+            } else {
+                if (index == 0) {
+                    return {-1, -1};
+                }
+                long d = T.depth(T.leftmost_leaf(child));
+                long start = len - d + 1;
+                long end = start + index - 1;
+                return {start, end};
+            }
+        }
+        node = child;
+    }
+    if (index == 0) {
+        return {-1, -1};
+    }
+    long start = len - T.depth(T.leftmost_leaf(node)) + 1;
+    long end = start + index - 1;
+    return {start, end};
+}
+
+void test_longest_consume_slice() {
+    for (int i = 0; i < 100; i++) {
+        int len = randint(2, 500);
+        string s = randstring(len, 'a', 'd');
+        CST cst;
+        construct_im(cst, s, 1);
+
+        for (int j = 0; j < 500; j++) {
+            Slice slice = randslice(len);
+            Slice found = longest_consume_slice(cst, slice.apply(s) + 'e', len);
+
+            if (!found.is_inbounds(s.size())) {
+                cout << "FAIL NOT IN BOUNDS\n";
+                return;
+            }
+            if (slice.apply(s) != found.apply(s)) {
+                cout << "FAIL NOT EQUAL\n";
+                return;
+            }
+        }
+    }
+    cout << "PASS\n";
 }
 
 //first element: num characters included from u.  second element for v.
@@ -363,20 +450,6 @@ void test_fuse_substrings() {
     cout << "Test 5: " << fuse_substrings(cst, cst_r, "ca", "br") << endl;*/
 }
 
-std::minstd_rand0 random_gen;
-
-//both sides inclusive
-int randint(int a, int b) {
-    std::uniform_int_distribution<int> distribution(a, b);
-    return distribution(random_gen);
-}
-
-Slice randslice(int length) {
-    int a = randint(0, length-1);
-    int b = randint(0, length-1);
-    return {min(a, b), max(a, b)};
-}
-
 void test_fuse_substrings_auto() {
     int RUNS_PER_STRING = 1000;
     for (int i = 0; i < 100; i++) {
@@ -421,37 +494,150 @@ long fuse_prefix_dummy(CST &T, Slice u, Slice v, const string &s) {
     return longest_consume(T, u.apply(s) + v.apply(s));
 }
 
+Slice fuse_prefix_dummy_slice(CST &T, Slice u, Slice v, const string &s) {
+    return longest_consume_slice(T, u.apply(s) + v.apply(s), s.size());
+}
+
+struct Block {
+    long start;
+    pair<long, long> candidate;
+    long t_start;
+
+    Block(long start) : start(start) {
+        candidate = {-1, -1};
+        t_start = -1;
+    }
+
+    Block(long start, pair<long, long> candidate, long t_start) : start(start), candidate(candidate), t_start(t_start) {}
+};
+
+//for every substring, there is a corresponding substring in the reverse of the string
+//for a substring containing the characters with indicies 0 and 1, the corresponding one will have the last 2 indicies
+Slice reverse_slice(Slice slice, long string_length) {
+    return {string_length-slice.end-1, string_length-slice.start-1};
+}
+
 class MaxBlockDecomposition {
     string s;
-    list<long> start_positions;
+    string t;
+    string t_r;
+    list<Block> blocks;
     CST T;
+    CST T_R;
+    leaf_index T_li;
+    leaf_index T_R_li;
 
     public:
     //T is the CST of the reference string
     //s is the string being decomposed.
-    MaxBlockDecomposition(CST &T, string s) {
+    MaxBlockDecomposition(string s, string t) {
         long index = 0;
-        this->T = T;
         this->s = s;
+        this->t = t;
+        construct_im(T, t, 1);
+        reverse(t.begin(), t.end());
+        this->t_r = t;
+        construct_im(T_R, t, 1);
+        reverse(t.begin(), t.end());
+        T_li   = build_leaf_index(T,   s.size());
+        T_R_li = build_leaf_index(T_R, s.size());
         while (index < s.size()) {
             string suffix = s.substr(index);
-            long block_len = longest_consume(T, suffix);
+            Slice slice = longest_consume_slice(T, suffix, t.size());
+            long block_len = slice.size();
             if (block_len == 0) {
                 block_len = 1;
             }
-            start_positions.push_back(index);
+            Block block(index);
+            block.t_start = slice.start;
+            blocks.push_back(block);
             index += block_len;
         }
+
+        for (auto iter = blocks.begin(); iter != blocks.end(); iter++) {
+            recalculate(iter);
+        }
+    }
+
+    string get_block_string(list<Block>::iterator block) {
+        return Slice{block->start, get_end(block)}.apply(s);
+    }
+
+    long get_block_size(list<Block>::iterator block) {
+        return get_end(block) - block->start + 1;
+    }
+
+    Slice get_block_t_slice(list<Block>::iterator block) {
+        if (block->t_start == -1) {
+            return {-1, -1};
+        }
+        return {block->t_start, block->t_start + get_block_size(block) - 1};
+    }
+
+    void recalculate(list<Block>::iterator block) {
+        auto iter = block;
+        Slice u;
+        if (iter == blocks.begin()) {
+            u = get_block_t_slice(iter);
+        } else {
+            Slice u1 = get_block_t_slice(iter);
+            iter--;
+            Slice u2 = get_block_t_slice(iter);
+            Slice u1_rev = reverse_slice(u1, s.size());
+            Slice u2_rev = reverse_slice(u2, s.size());
+
+            if (u1.start == -1 || u2.start == -1) {
+                u = u1;
+            } else {
+                Slice ans = fuse_prefix_dummy_slice(T_R, u1_rev, u2_rev, t_r);
+                u = reverse_slice(ans, s.size());
+            }
+        }
+
+        Slice v;
+        iter = block;
+        iter++;
+        if (iter == blocks.end()) {
+            v = {-1, -1};
+        } else {
+            auto iter_next = iter;
+            iter_next++;
+            if (iter_next == blocks.end()) {
+                v = get_block_t_slice(iter);
+            } else {
+                Slice v1 = get_block_t_slice(iter);
+                Slice v2 = get_block_t_slice(iter_next);
+
+                if (v1.start == -1 || v2.start == -1) {
+                    v = v1;
+                } else {
+                    v = fuse_prefix_dummy_slice(T, v1, v2, t);
+                }
+            }
+        }
+
+
+        pair<long, long> result;
+        if (u.start == -1 && v.start == -1) {
+            result = {0, 0};
+        } else if (u.start == -1) {
+            result = {0, v.size()};
+        } else if (v.start == -1) {
+            result = {u.size(), 0};
+        } else {
+            result = fuse_substrings_HIA(T, T_R, T_li, T_R_li, s, u, v);
+        }
+        block->candidate = result;
     }
 
     vector<Slice> get_slices() {
         vector<Slice> ans;
         long prev = -1;
-        for (long start : start_positions) {
+        for (Block block : blocks) {
             if (prev != -1) {
-                ans.push_back({prev, start-1});
+                ans.push_back({prev, block.start-1});
             }
-            prev = start;
+            prev = block.start;
         }
         if (prev != -1) {
             ans.push_back({prev, (long)s.size()-1});
@@ -474,6 +660,12 @@ class MaxBlockDecomposition {
         cout << '\n';
     }
 
+    string get_candidate_string(list<Block>::iterator iter) {
+        long end = get_end(iter);
+        return Slice{end - iter->candidate.first + 1,
+            end + iter->candidate.second}.apply(s);
+    }
+
     bool validate() {
         auto slices = get_slices();
         for (Slice slice : slices) {
@@ -494,17 +686,24 @@ class MaxBlockDecomposition {
             }
         }
 
+        for (auto iter = blocks.begin(); iter != blocks.end(); iter++) {
+            string candidate = get_candidate_string(iter);
+            if (longest_consume(T, candidate) != candidate.size()) {
+                return false;
+            }
+        }
+
         return true;
     }
 
     void test_remove_first() {
-        start_positions.erase(start_positions.begin());
+        blocks.erase(blocks.begin());
     }
 
     void test_remove_second() {
-        auto iter = start_positions.begin();
+        auto iter = blocks.begin();
         iter++;
-        start_positions.erase(iter);
+        blocks.erase(iter);
     }
 
     /*Slice find_slice(long pos) {
@@ -519,13 +718,13 @@ class MaxBlockDecomposition {
         return {-1, -1};
     }*/
 
-    long get_end(list<long>::iterator iter) {
+    long get_end(list<Block>::iterator iter) {
         auto next = iter;
         next++;
-        if (next == start_positions.end()) {
+        if (next == blocks.end()) {
             return s.size()-1;
         }
-        return *next - 1;
+        return next->start - 1;
     }
 
     void replace(long pos, char c) {
@@ -535,27 +734,27 @@ class MaxBlockDecomposition {
         //get the end pos of the next block
         //this start-end are the upper and lower bounds of what indicies need to be merged
         //starting with the prev block, redraw the boundaries until reaching a block with an end position past the bounds
-        auto iter = start_positions.begin();
-        while (iter != start_positions.end() && *iter < pos) {
+        auto iter = blocks.begin();
+        while (iter != blocks.end() && iter->start < pos) {
             iter++;
         }
-        if (iter == start_positions.end() || *iter > pos) {
+        if (iter == blocks.end() || iter->start > pos) {
             iter--;
         }
 
         long start;
-        if (iter == start_positions.begin()) {
-            start = *iter;
+        if (iter == blocks.begin()) {
+            start = iter->start;
         } else {
             auto prev = iter;
             prev--;
-            start = *prev;
+            start = prev->start;
         }
 
         long end;
         auto next = iter;
         next++;
-        if (next == start_positions.end()) {
+        if (next == blocks.end()) {
             end = s.size()-1;
         } else {
             end = get_end(next);
@@ -567,24 +766,24 @@ class MaxBlockDecomposition {
         //if the character is not the first in a block, an entry for the position of the character
         //if the character is not the last in a block, an entry for the position after the character
         auto iter_temp = iter;
-        if (pos != *iter_temp) {
+        if (pos != iter_temp->start) {
             auto next = iter_temp;
             next++;
-            iter_temp = start_positions.insert(next, pos);
+            iter_temp = blocks.insert(next, Block(pos));
         }
         auto next_temp = iter_temp;
         next_temp++;
-        if (pos != s.size()-1 && (next_temp == start_positions.end() || pos != *next_temp - 1)) {
+        if (pos != s.size()-1 && (next_temp == blocks.end() || pos != next_temp->start - 1)) {
             auto next = iter_temp;
             next++;
-            start_positions.insert(next, pos+1);
+            blocks.insert(next, pos+1);
         }
 
-        if (iter != start_positions.begin()) {
+        if (iter != blocks.begin()) {
             iter--;
         }
         while (true) {
-            long curr_start = *iter;
+            long curr_start = iter->start;
             long curr_end = get_end(iter);
             if (curr_start > end) {
                 return;
@@ -602,12 +801,12 @@ class MaxBlockDecomposition {
                     //len < slice.size()
                     auto next = iter;
                     next++;
-                    iter = start_positions.insert(next, curr_start+len);
+                    iter = blocks.insert(next, curr_start+len);
                 }
             } else {
                 auto next = iter;
                 next++;
-                long next_start = *next;
+                long next_start = next->start;
                 long next_end = get_end(next);
 
                 Slice curr_slice = {curr_start, curr_end};
@@ -617,7 +816,7 @@ class MaxBlockDecomposition {
                     len = 1;
                 }
                 if (len < curr_slice.size()) {
-                    iter = start_positions.insert(next, curr_start+len);
+                    iter = blocks.insert(next, curr_start+len);
                 }
                 else if (len == curr_slice.size()) {
                     iter = next;
@@ -625,9 +824,18 @@ class MaxBlockDecomposition {
                     iter = next;
                 } else {
                     //len == (curr_slice.size() + next_slice.size())
-                    start_positions.erase(next);
+                    blocks.erase(next);
                 }
             }
+        }
+    }
+
+    void print_candidates() {
+        int index = 0;
+        for (auto iter = blocks.begin(); iter != blocks.end(); iter++) {
+            cout << index++ << ": ";
+            cout << get_candidate_string(iter);
+            cout << '\n';
         }
     }
 };
@@ -642,9 +850,7 @@ void test_replace() {
             s += (char) randint('a', 'c');
             t += (char) randint('a', 'c');
         }
-        CST T;
-        construct_im(T, t, 1);
-        MaxBlockDecomposition decomp(T, s);
+        MaxBlockDecomposition decomp(s, t);
 
         for (int j = 0; j < RUNS_PER_STRING; j++) {
             /*if (j == 48) {
@@ -667,6 +873,51 @@ void test_replace() {
     cout << "PASS\n";
 }
 
+void test_initial_blocks() {
+    int RUNS_PER_STRING = 1000;
+    for (int i = 0; i < 100; i++) {
+        if (i == 42) {
+            cout << i;
+        }
+        int length = randint(4, 10);
+        string s = "";
+        string t = "";
+        for (int j = 0; j < length; j++) {
+            s += (char) randint('a', 'c');
+            t += (char) randint('a', 'c');
+        }
+        MaxBlockDecomposition decomp(s, t);
+
+        if (!decomp.validate()) {
+            cout << t << '\n';
+            cout << "FAIL " << i << '\n';
+            decomp.print();
+            decomp.print_candidates();
+            return;
+        }
+    }
+
+    cout << "PASS\n";
+}
+
+//returns slice of s or {-1, -1} if no characters are in common
+Slice LCS_slow(string s, string t) {
+    CST T;
+    construct_im(T, t, 1);
+
+    Slice best{-1, -1};
+    for (long start = 0; start < s.size(); start++) {
+        string substr = s.substr(start);
+
+        long match = longest_consume(T, substr);
+        if (best.start == -1 || best.size() < match) {
+            best = {start, start + match - 1};
+        }
+    }
+
+    return best;
+}
+
 int main() {
     //test_fuse_substrings_auto();
 
@@ -681,7 +932,11 @@ int main() {
     mbd.test_remove_second();
     cout << mbd.validate() << '\n';*/
 
-    test_replace();
+    test_initial_blocks();
+
+    //string s = "aaaabaa";
+    //Slice ans = LCS_slow(s, "aaaba");
+    //cout << ans.apply(s) << '\n';
 
 
 }
