@@ -12,6 +12,8 @@
 #include <random>
 #include <list>
 
+#include "heap.cpp"
+
 using namespace sdsl;
 
 using std::list;
@@ -47,6 +49,20 @@ class Slice {
     bool is_inbounds(int max) const {
         return start <= end && end <= max;
     }
+
+    bool is_invalid() const {
+        return start == -1 && end == -1;
+    }
+
+    bool operator>(const Slice& other) const {
+        if (is_invalid()) return false;
+        if (other.is_invalid()) return true;
+        return (size() > other.size()) || (size() == other.size() && start > other.start);
+    }
+
+    bool operator==(const Slice& other) const {
+        return start == other.start && end == other.end;
+    }
 };
 
 struct TwoSet {
@@ -76,7 +92,7 @@ struct TwoSet {
     }
 };
 
-std::minstd_rand0 random_gen;
+std::minstd_rand0 random_gen(0);
 
 //both sides inclusive
 int randint(int a, int b) {
@@ -500,15 +516,15 @@ Slice fuse_prefix_dummy_slice(CST &T, Slice u, Slice v, const string &s) {
 
 struct Block {
     long start;
-    pair<long, long> candidate;
+    Slice candidate;
     long t_start;
 
     Block(long start) : start(start) {
-        candidate = {-1, -1};
+        candidate = {0, 0};
         t_start = -1;
     }
 
-    Block(long start, pair<long, long> candidate, long t_start) : start(start), candidate(candidate), t_start(t_start) {}
+    Block(long start, Slice candidate, long t_start) : start(start), candidate(candidate), t_start(t_start) {}
 };
 
 //for every substring, there is a corresponding substring in the reverse of the string
@@ -516,6 +532,8 @@ struct Block {
 Slice reverse_slice(Slice slice, long string_length) {
     return {string_length-slice.end-1, string_length-slice.start-1};
 }
+
+using block_iter = list<Block>::iterator;
 
 class MaxBlockDecomposition {
     string s;
@@ -526,6 +544,7 @@ class MaxBlockDecomposition {
     CST T_R;
     leaf_index T_li;
     leaf_index T_R_li;
+    Heap<Slice> candidate_heap;
 
     public:
     //T is the CST of the reference string
@@ -559,23 +578,24 @@ class MaxBlockDecomposition {
         }
     }
 
-    string get_block_string(list<Block>::iterator block) {
+    string get_block_string(block_iter block) {
         return Slice{block->start, get_end(block)}.apply(s);
     }
 
-    long get_block_size(list<Block>::iterator block) {
+    long get_block_size(block_iter block) {
         return get_end(block) - block->start + 1;
     }
 
-    Slice get_block_t_slice(list<Block>::iterator block) {
+    Slice get_block_t_slice(block_iter block) {
         if (block->t_start == -1) {
             return {-1, -1};
         }
         return {block->t_start, block->t_start + get_block_size(block) - 1};
     }
 
-    void recalculate(list<Block>::iterator block) {
+    void recalculate(block_iter block) {
         auto iter = block;
+        candidate_heap.remove(block->candidate);
         Slice u;
         if (iter == blocks.begin()) {
             u = get_block_t_slice(iter);
@@ -627,7 +647,9 @@ class MaxBlockDecomposition {
         } else {
             result = fuse_substrings_HIA(T, T_R, T_li, T_R_li, s, u, v);
         }
-        block->candidate = result;
+        long end = get_end(block);
+        block->candidate = Slice{end - result.first + 1, end + result.second};
+        candidate_heap.add(block->candidate);
     }
 
     vector<Slice> get_slices() {
@@ -660,10 +682,8 @@ class MaxBlockDecomposition {
         cout << '\n';
     }
 
-    string get_candidate_string(list<Block>::iterator iter) {
-        long end = get_end(iter);
-        return Slice{end - iter->candidate.first + 1,
-            end + iter->candidate.second}.apply(s);
+    string get_candidate_string(block_iter iter) {
+        return iter->candidate.apply(s);
     }
 
     bool validate() {
@@ -718,7 +738,7 @@ class MaxBlockDecomposition {
         return {-1, -1};
     }*/
 
-    long get_end(list<Block>::iterator iter) {
+    long get_end(block_iter iter) {
         auto next = iter;
         next++;
         if (next == blocks.end()) {
@@ -728,6 +748,9 @@ class MaxBlockDecomposition {
     }
 
     void replace(long pos, char c) {
+        if (s[pos] == c) {
+            return;
+        }
         s[pos] = c;
         //get an iterator to the start pos of the block this pos belongs to
         //get the start pos of the previous block
@@ -741,6 +764,7 @@ class MaxBlockDecomposition {
         if (iter == blocks.end() || iter->start > pos) {
             iter--;
         }
+        auto original_block = iter;
 
         long start;
         if (iter == blocks.begin()) {
@@ -760,6 +784,23 @@ class MaxBlockDecomposition {
             end = get_end(next);
         }
 
+        //key: start position
+        //value: block to recalculate;
+        block_iter min_changed = blocks.end();
+        block_iter max_changed = blocks.end();
+        auto insert_and_recalc = [&](block_iter iter, Block block) {
+            auto new_iter = blocks.insert(iter, block);
+            max_changed = new_iter;
+
+            if (min_changed == blocks.end()) {
+                auto prev = new_iter;
+                if (prev != blocks.begin()) {
+                    prev--;
+                }
+                min_changed = prev;
+            }
+            return new_iter;
+        };
 
         //isolate the changed character in its own block
         //up to 2 entries need to be added:
@@ -769,15 +810,16 @@ class MaxBlockDecomposition {
         if (pos != iter_temp->start) {
             auto next = iter_temp;
             next++;
-            iter_temp = blocks.insert(next, Block(pos));
+            iter_temp = insert_and_recalc(next, Block(pos));
         }
         auto next_temp = iter_temp;
         next_temp++;
         if (pos != s.size()-1 && (next_temp == blocks.end() || pos != next_temp->start - 1)) {
             auto next = iter_temp;
             next++;
-            blocks.insert(next, pos+1);
+            insert_and_recalc(next, Block(pos+1));
         }
+        iter_temp->t_start = longest_consume_slice(T, ""+s[iter_temp->start], s.size()).start;
 
         if (iter != blocks.begin()) {
             iter--;
@@ -786,7 +828,7 @@ class MaxBlockDecomposition {
             long curr_start = iter->start;
             long curr_end = get_end(iter);
             if (curr_start > end) {
-                return;
+                break;
             }
             if (curr_end == s.size()-1) {
                 Slice slice{curr_start, curr_end};
@@ -801,7 +843,7 @@ class MaxBlockDecomposition {
                     //len < slice.size()
                     auto next = iter;
                     next++;
-                    iter = blocks.insert(next, curr_start+len);
+                    iter = insert_and_recalc(next, Block(curr_start+len));
                 }
             } else {
                 auto next = iter;
@@ -811,12 +853,13 @@ class MaxBlockDecomposition {
 
                 Slice curr_slice = {curr_start, curr_end};
                 Slice next_slice = {next_start, next_end};
-                long len = fuse_prefix_dummy(T, curr_slice, next_slice, s);
+                Slice slice = fuse_prefix_dummy_slice(T, curr_slice, next_slice, s);
+                long len = slice.size();
                 if (len == 0) {
                     len = 1;
                 }
                 if (len < curr_slice.size()) {
-                    iter = blocks.insert(next, curr_start+len);
+                    iter = insert_and_recalc(next, curr_start+len);
                 }
                 else if (len == curr_slice.size()) {
                     iter = next;
@@ -824,9 +867,44 @@ class MaxBlockDecomposition {
                     iter = next;
                 } else {
                     //len == (curr_slice.size() + next_slice.size())
+                    if (min_changed == blocks.end()) {
+                        min_changed = iter;
+                    }
+                    if (min_changed == next) {
+                        min_changed = iter;
+                    }
                     blocks.erase(next);
+                    max_changed = iter;
+                    iter->t_start = slice.start;
                 }
             }
+        }
+
+        //walk the min iterator back twice, and the max iterator forward once
+        //because the recalculation uses the next 2 blocks but only the previous 1
+        //then recalculate everything between the iterators
+        if (min_changed == blocks.end()) {
+            min_changed = original_block;
+            max_changed = original_block;
+        }
+        for (int i = 0; i < 2; i++) {
+            if (min_changed == blocks.begin()) {
+                break;
+            }
+            min_changed--;
+        }
+
+        //I lied, we walk the forward iterator forward twice too
+        //because the loop uses it as an exclusive bound, not inclusive
+        for (int i = 0; i < 2; i++) {
+            max_changed++;
+            if (max_changed == blocks.end()) {
+                break;
+            }
+        }
+
+        for (block_iter iter = min_changed; iter != max_changed; iter++) {
+            recalculate(iter);
         }
     }
 
@@ -843,7 +921,7 @@ class MaxBlockDecomposition {
 void test_replace() {
     int RUNS_PER_STRING = 1000;
     for (int i = 0; i < 100; i++) {
-        int length = randint(4, 100);
+        int length = randint(4, 10);
         string s = "";
         string t = "";
         for (int j = 0; j < length; j++) {
@@ -853,13 +931,13 @@ void test_replace() {
         MaxBlockDecomposition decomp(s, t);
 
         for (int j = 0; j < RUNS_PER_STRING; j++) {
-            /*if (j == 48) {
-                cout << "48\n";
-                cout << "t: " << t << '\n';
-                decomp.print();
-            }*/
+            if (i == 1 && j == 87) {
+                cout << "MERP";
+            }
             long pos = randint(0, length-1);
             char c = randint('a', 'h');
+            cout << t << '\n';
+            decomp.print();
             decomp.replace(pos, c);
             bool result = decomp.validate();
             if (!result) {
@@ -932,7 +1010,7 @@ int main() {
     mbd.test_remove_second();
     cout << mbd.validate() << '\n';*/
 
-    test_initial_blocks();
+    test_replace();
 
     //string s = "aaaabaa";
     //Slice ans = LCS_slow(s, "aaaba");
