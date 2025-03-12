@@ -764,7 +764,7 @@ class MaxBlockDecomposition {
         if (iter == blocks.end() || iter->start > pos) {
             iter--;
         }
-        auto original_block = iter;
+        block_iter original_block = iter;
 
         long start;
         if (iter == blocks.begin()) {
@@ -887,6 +887,14 @@ class MaxBlockDecomposition {
             min_changed = original_block;
             max_changed = original_block;
         }
+
+        //make sure that at least the original position is covered
+        while (max_changed != blocks.end() && max_changed->start <= pos) {
+            max_changed++;
+        }
+        if (max_changed == blocks.end()) {
+            max_changed--;
+        }
         for (int i = 0; i < 2; i++) {
             if (min_changed == blocks.begin()) {
                 break;
@@ -931,7 +939,7 @@ void test_replace() {
         MaxBlockDecomposition decomp(s, t);
 
         for (int j = 0; j < RUNS_PER_STRING; j++) {
-            if (i == 1 && j == 87) {
+            if (i == 14 && j == 239) {
                 cout << "MERP";
             }
             long pos = randint(0, length-1);
@@ -954,7 +962,7 @@ void test_replace() {
 void test_initial_blocks() {
     int RUNS_PER_STRING = 1000;
     for (int i = 0; i < 100; i++) {
-        if (i == 42) {
+        if (i == 14) {
             cout << i;
         }
         int length = randint(4, 10);
