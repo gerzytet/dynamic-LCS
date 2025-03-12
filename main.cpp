@@ -520,7 +520,7 @@ struct Block {
     long t_start;
 
     Block(long start) : start(start) {
-        candidate = {0, 0};
+        candidate = {-1, -1};
         t_start = -1;
     }
 
@@ -792,13 +792,14 @@ class MaxBlockDecomposition {
             auto new_iter = blocks.insert(iter, block);
             max_changed = new_iter;
 
+            auto prev = new_iter;
+            if (prev != blocks.begin()) {
+                prev--;
+            }
             if (min_changed == blocks.end()) {
-                auto prev = new_iter;
-                if (prev != blocks.begin()) {
-                    prev--;
-                }
                 min_changed = prev;
             }
+            new_iter->t_start = prev->t_start + (get_end(prev) - prev->start + 1);
             return new_iter;
         };
 
@@ -819,7 +820,8 @@ class MaxBlockDecomposition {
             next++;
             insert_and_recalc(next, Block(pos+1));
         }
-        iter_temp->t_start = longest_consume_slice(T, ""+s[iter_temp->start], s.size()).start;
+        string test_string(1, s[iter_temp->start]);
+        iter_temp->t_start = longest_consume_slice(T, test_string, s.size()).start;
 
         if (iter != blocks.begin()) {
             iter--;
@@ -873,6 +875,7 @@ class MaxBlockDecomposition {
                     if (min_changed == next) {
                         min_changed = iter;
                     }
+                    candidate_heap.remove(next->candidate);
                     blocks.erase(next);
                     max_changed = iter;
                     iter->t_start = slice.start;
@@ -923,6 +926,10 @@ class MaxBlockDecomposition {
             cout << get_candidate_string(iter);
             cout << '\n';
         }
+    }
+
+    Slice get_lcs() {
+        return candidate_heap.get_highest();
     }
 };
 
@@ -1004,6 +1011,50 @@ Slice LCS_slow(string s, string t) {
     return best;
 }
 
+void test_LCS() {
+    int RUNS_PER_STRING = 1000;
+    for (int i = 0; i < 100; i++) {
+        int length = randint(4, 10);
+        string s = "";
+        string t = "";
+        for (int j = 0; j < length; j++) {
+            s += (char) randint('a', 'c');
+            t += (char) randint('a', 'c');
+        }
+        MaxBlockDecomposition decomp(s, t);
+
+        for (int j = 0; j < RUNS_PER_STRING; j++) {
+            if (j == 414) {
+                cout << "MERP";
+            }
+            long pos = randint(0, length-1);
+            char c = randint('a', 'h');
+            s[pos] = c;
+            //cout << t << '\n';
+            //decomp.print();
+            //decomp.print_candidates();
+            decomp.replace(pos, c);
+            bool result = decomp.validate();
+            if (!result) {
+                cout << "VALIDATE FAIL i: " << i << ", j: " << j << '\n';
+                decomp.print();
+                return;
+            }
+            Slice LCS_reference = LCS_slow(s, t);
+            Slice LCS = decomp.get_lcs();
+            if (LCS.size() != LCS_reference.size()) {
+                cout << "FAIL: reference is " << LCS_reference.size() << " calculated is " << LCS.size() << '\n';
+                decomp.print();
+                decomp.print_candidates();
+                return;
+            }
+        }
+        cout << "PASS " << i << '\n';
+    }
+
+    cout << "PASS\n";
+}
+
 int main() {
     //test_fuse_substrings_auto();
 
@@ -1018,7 +1069,7 @@ int main() {
     mbd.test_remove_second();
     cout << mbd.validate() << '\n';*/
 
-    test_replace();
+    test_LCS();
 
     //string s = "aaaabaa";
     //Slice ans = LCS_slow(s, "aaaba");
