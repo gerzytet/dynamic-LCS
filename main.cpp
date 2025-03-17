@@ -13,6 +13,7 @@
 #include <list>
 
 #include "heap.cpp"
+#include "G4G_LCS.cpp"
 
 using namespace sdsl;
 
@@ -784,8 +785,6 @@ class MaxBlockDecomposition {
             end = get_end(next);
         }
 
-        //key: start position
-        //value: block to recalculate;
         block_iter min_changed = blocks.end();
         block_iter max_changed = blocks.end();
         auto insert_and_recalc = [&](block_iter iter, Block block) {
@@ -905,7 +904,7 @@ class MaxBlockDecomposition {
             min_changed--;
         }
 
-        //I lied, we walk the forward iterator forward twice too
+        //we walk the forward iterator forward twice too actually
         //because the loop uses it as an exclusive bound, not inclusive
         for (int i = 0; i < 2; i++) {
             max_changed++;
@@ -1012,9 +1011,9 @@ Slice LCS_slow(string s, string t) {
 }
 
 void test_LCS() {
-    int RUNS_PER_STRING = 1000;
-    for (int i = 0; i < 100; i++) {
-        int length = randint(4, 10);
+    int RUNS_PER_STRING = 100;
+    for (int i = 0; i < 10; i++) {
+        int length = randint(1000, 2000);
         string s = "";
         string t = "";
         for (int j = 0; j < length; j++) {
@@ -1024,9 +1023,6 @@ void test_LCS() {
         MaxBlockDecomposition decomp(s, t);
 
         for (int j = 0; j < RUNS_PER_STRING; j++) {
-            if (j == 414) {
-                cout << "MERP";
-            }
             long pos = randint(0, length-1);
             char c = randint('a', 'h');
             s[pos] = c;
@@ -1040,7 +1036,7 @@ void test_LCS() {
                 decomp.print();
                 return;
             }
-            Slice LCS_reference = LCS_slow(s, t);
+            string LCS_reference = G4G::LCS(s, t);
             Slice LCS = decomp.get_lcs();
             if (LCS.size() != LCS_reference.size()) {
                 cout << "FAIL: reference is " << LCS_reference.size() << " calculated is " << LCS.size() << '\n';
@@ -1052,7 +1048,7 @@ void test_LCS() {
         cout << "PASS " << i << '\n';
     }
 
-    cout << "PASS\n";
+    cout << "PASS ALL\n";
 }
 
 int main() {
