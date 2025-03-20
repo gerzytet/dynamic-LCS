@@ -31,8 +31,13 @@ using std::min;
 using std::max;
 using std::reverse;
 
-using Node = sdsl::bp_interval<sdsl::int_vector_size_type>;
-using CST = cst_sct3<>;
+using Node = sdsl::int_vector_size_type;
+using CST = cst_sada<csa_wt<>,
+    lcp_support_sada<>,
+    bp_support_sada<>,
+    rank_support_v<10,2>,
+    select_support_mcl<10,2>>;
+
 
 //both ends inclusive!
 class Slice {
@@ -138,13 +143,26 @@ void flip_subtree_excluding_child(const CST &T, TwoSet &ts, Node root, Node chil
     long c_right = T.rb(child);
 
     for (unsigned long i = left; i < c_left; i++) {
-        Node n = {i, i};
-        ts.update(mapper(T, n, length), sign);
+        ts.update(mapper(T, T.select_leaf(i+1), length), sign);
     }
 
     for (unsigned long i = c_right+1; i <= right; i++) {
-        Node n = {i, i};
-        ts.update(mapper(T, n, length), sign);
+        ts.update(mapper(T, T.select_leaf(i+1), length), sign);
+    }
+}
+
+//version of the select_leaf function that works with leaf 0
+Node select_leaf(CST T, long i) {
+    if (i == 0) {
+        auto iter = T.begin();
+        iter++;
+        if (!T.is_leaf(*iter) || T.depth(*iter) != 1) {
+            cout << "ERROR: CST STRUCTURE NOT AS EXPECTED\n";
+            exit(1);
+        }
+        return *iter;
+    } else {
+        return T.select_leaf(i);
     }
 }
 
@@ -169,13 +187,18 @@ HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long u_length, long v_leng
     //find induced node boundaries, then return HIA
     long twos = 0;
     //v_temp is the root at this point
-    for (unsigned long i = T2.lb(v_temp); i <= T2.rb(v_temp); i++) {
-        ts.add(T2_mapper(T2, {i, i}, length));
+    Node lb = T2.lb(v_temp);
+    Node rb = T2.rb(v_temp);
+
+    //cout << lb << ' ' << rb << std::endl;
+    for (unsigned long i = lb; i <= rb; i++) {
+        auto to_add = T2_mapper(T2, select_leaf(T2, i+1), length);
+        ts.add(to_add);
     }
 
     Node u_temp = u;
     for (unsigned long i = T1.lb(u_temp); i <= T1.rb(u_temp); i++) {
-        ts.add(T1_mapper(T1, {i, i}, length));
+        ts.add(T1_mapper(T1, select_leaf(T1, i+1), length));
     }
 
     Node HIA_1 = u;
@@ -211,28 +234,6 @@ HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long u_length, long v_leng
     return HIAResult(HIA_1, HIA_2, HIA_sum);
 }
 
-template<label_mapper T1_mapper, label_mapper T2_mapper>
-bool is_induced(CST &T1, CST &T2, Node u, Node v, long length) {
-    TwoSet ts;
-    long left = T1.lb(u);
-    long right = T1.rb(u);
-
-    for (long i = left; i <= right; i++) {
-        Node n = {i, i};
-        ts.add(T1_mapper(T1, n, length));
-    }
-
-    left = T2.lb(v);
-    right = T2.rb(v);
-
-    for (long i = left; i <= right; i++) {
-        Node n = {i, i};
-        ts.add(T2_mapper(T2, n, length));
-    }
-
-    return ts.twos > 0;
-}
-
 long longest_consume(const CST &T, const string &s) {
     long index = 0;
     Node node = T.root();
@@ -254,6 +255,7 @@ long longest_consume(const CST &T, const string &s) {
     return index;
 }
 
+//len is length of t
 Slice longest_consume_slice(const CST &T, const string &s, long len) {
     long index = 0;
     Node node = T.root();
@@ -381,27 +383,30 @@ void debug_print_node(const CST &T, Node node) {
     cout << '\n';
 }
 
-pair<long, long> fuse_substrings_HIA(CST &T, CST &T_R, const leaf_index &li, const leaf_index &li_r, const string &s, Slice u, Slice v) {
+pair<long, long> fuse_substrings_HIA(CST &T, CST &T_R, const leaf_index &li, const leaf_index &li_r, long t_len, Slice u, Slice v) {
     //figure out the start position of u in the reversed string, 0 indexed
-    long u_start_rev = s.size() - u.end - 1;
+    long u_start_rev = t_len - u.end - 1;
 
     //then the depth of the leaf node in the reversed suffix tree
-    long u_rev_leaf_depth = s.size() - u_start_rev + 1;
+    long u_rev_leaf_depth = t_len - u_start_rev + 1;
 
     Node u_rev_leaf = T_R.inv_id(li_r[u_rev_leaf_depth-1]);
+    //debug_print_node(T_R,u_rev_leaf);
+
     //debug_print_node(T_R, u_rev_leaf);
     Node u_rev_node = go_up(T_R, u_rev_leaf, u.size());
     //debug_print_node(T_R, u_rev_node);
 
 
-    long v_leaf_depth = s.size() - v.start + 1;
+    long v_leaf_depth = t_len - v.start + 1;
     Node v_leaf = T.inv_id(li[v_leaf_depth-1]);
+    //debug_print_node(T,v_leaf);
     //debug_print_node(T, v_leaf);
     Node v_node = go_up(T, v_leaf, v.size());
     //debug_print_node(T, v_node);
 
     HIAResult result = dummy_HIA<reverse_cst_label_mapper, cst_label_mapper>(
-        T_R, T, u_rev_node, v_node, u.size(), v.size(), s.size()
+        T_R, T, u_rev_node, v_node, u.size(), v.size(), t_len
     );
 
     //cout << "sum" << result.sum << '\n';
@@ -451,7 +456,7 @@ void test_fuse_substrings() {
         testnum++;
         auto ans = fuse_substrings(cst, cst_r, s, u, v);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
-        ans = fuse_substrings_HIA(cst, cst_r, li, li_r, s, u, v);
+        ans = fuse_substrings_HIA(cst, cst_r, li, li_r, s.size(), u, v);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
     };
 
@@ -491,7 +496,7 @@ void test_fuse_substrings_auto() {
             Slice v = randslice(length);
 
             auto ans_base = fuse_substrings(cst, cst_r, s, u, v);
-            auto ans_hia = fuse_substrings_HIA(cst, cst_r, li, li_r, s, u, v);
+            auto ans_hia = fuse_substrings_HIA(cst, cst_r, li, li_r, s.size(), u, v);
 
             int base_len = ans_base.first + ans_base.second;
             int hia_len  = ans_hia.first + ans_hia.second;
@@ -511,8 +516,8 @@ long fuse_prefix_dummy(CST &T, Slice u, Slice v, const string &s) {
     return longest_consume(T, u.apply(s) + v.apply(s));
 }
 
-Slice fuse_prefix_dummy_slice(CST &T, Slice u, Slice v, const string &s) {
-    return longest_consume_slice(T, u.apply(s) + v.apply(s), s.size());
+Slice fuse_prefix_dummy_slice(CST &T, Slice u, Slice v, const string &s, long t_len) {
+    return longest_consume_slice(T, u.apply(s) + v.apply(s), t_len);
 }
 
 struct Block {
@@ -540,6 +545,7 @@ class MaxBlockDecomposition {
     string s;
     string t;
     string t_r;
+    long t_size;
     list<Block> blocks;
     CST T;
     CST T_R;
@@ -552,6 +558,7 @@ class MaxBlockDecomposition {
     //s is the string being decomposed.
     MaxBlockDecomposition(string s, string t) {
         long index = 0;
+        t_size = t.size();
         this->s = s;
         this->t = t;
         construct_im(T, t, 1);
@@ -559,11 +566,11 @@ class MaxBlockDecomposition {
         this->t_r = t;
         construct_im(T_R, t, 1);
         reverse(t.begin(), t.end());
-        T_li   = build_leaf_index(T,   s.size());
-        T_R_li = build_leaf_index(T_R, s.size());
+        T_li   = build_leaf_index(T,   t.size());
+        T_R_li = build_leaf_index(T_R, t.size());
         while (index < s.size()) {
             string suffix = s.substr(index);
-            Slice slice = longest_consume_slice(T, suffix, t.size());
+            Slice slice = longest_consume_slice(T, suffix, t_size);
             long block_len = slice.size();
             if (block_len == 0) {
                 block_len = 1;
@@ -604,14 +611,14 @@ class MaxBlockDecomposition {
             Slice u1 = get_block_t_slice(iter);
             iter--;
             Slice u2 = get_block_t_slice(iter);
-            Slice u1_rev = reverse_slice(u1, s.size());
-            Slice u2_rev = reverse_slice(u2, s.size());
+            Slice u1_rev = reverse_slice(u1, t_size);
+            Slice u2_rev = reverse_slice(u2, t_size);
 
             if (u1.start == -1 || u2.start == -1) {
                 u = u1;
             } else {
-                Slice ans = fuse_prefix_dummy_slice(T_R, u1_rev, u2_rev, t_r);
-                u = reverse_slice(ans, s.size());
+                Slice ans = fuse_prefix_dummy_slice(T_R, u1_rev, u2_rev, t_r, t_size);
+                u = reverse_slice(ans, t_size);
             }
         }
 
@@ -632,7 +639,7 @@ class MaxBlockDecomposition {
                 if (v1.start == -1 || v2.start == -1) {
                     v = v1;
                 } else {
-                    v = fuse_prefix_dummy_slice(T, v1, v2, t);
+                    v = fuse_prefix_dummy_slice(T, v1, v2, t, t_size);
                 }
             }
         }
@@ -646,7 +653,7 @@ class MaxBlockDecomposition {
         } else if (v.start == -1) {
             result = {u.size(), 0};
         } else {
-            result = fuse_substrings_HIA(T, T_R, T_li, T_R_li, s, u, v);
+            result = fuse_substrings_HIA(T, T_R, T_li, T_R_li, t_size, u, v);
         }
         long end = get_end(block);
         block->candidate = Slice{end - result.first + 1, end + result.second};
@@ -820,7 +827,7 @@ class MaxBlockDecomposition {
             insert_and_recalc(next, Block(pos+1));
         }
         string test_string(1, s[iter_temp->start]);
-        iter_temp->t_start = longest_consume_slice(T, test_string, s.size()).start;
+        iter_temp->t_start = longest_consume_slice(T, test_string, t_size).start;
 
         if (iter != blocks.begin()) {
             iter--;
@@ -854,7 +861,7 @@ class MaxBlockDecomposition {
 
                 Slice curr_slice = {curr_start, curr_end};
                 Slice next_slice = {next_start, next_end};
-                Slice slice = fuse_prefix_dummy_slice(T, curr_slice, next_slice, s);
+                Slice slice = fuse_prefix_dummy_slice(T, curr_slice, next_slice, s, t_size);
                 long len = slice.size();
                 if (len == 0) {
                     len = 1;
@@ -992,6 +999,67 @@ void test_initial_blocks() {
     cout << "PASS\n";
 }
 
+void test_initial_blocks_different_lengths() {
+    int RUNS_PER_STRING = 1000;
+    for (int i = 0; i < 100; i++) {
+        if (i == 6) {
+            cout << "MERP";
+        }
+        int length_s = randint(4, 10);
+        int length_t = randint(4, 10);
+        string s = "";
+        string t = "";
+        for (int j = 0; j < length_s; j++) {
+            s += (char) randint('a', 'c');
+        }
+        for (int j = 0; j < length_t; j++) {
+            t += (char) randint('a', 'c');
+        }
+        MaxBlockDecomposition decomp(s, t);
+
+        if (!decomp.validate()) {
+            cout << t << '\n';
+            cout << "FAIL " << i << '\n';
+            decomp.print();
+            decomp.print_candidates();
+            return;
+        }
+    }
+
+    cout << "PASS\n";
+}
+
+void test_fuse_prefix() {
+    int RUNS_PER_STRING = 1000;
+    for (int i = 0; i < 100; i++) {
+        int length = randint(4, 10);
+        string s = "";
+        string t = "";
+        for (int j = 0; j < length; j++) {
+            s += (char) randint('a', 'c');
+            t += (char) randint('a', 'c');
+        }
+        CST cst;
+        construct_im(cst, t, 1);
+
+        for (int j = 0; j < RUNS_PER_STRING; j++) {
+            Slice u = randslice(length);
+            Slice v = randslice(length);
+
+            long len = fuse_prefix_dummy(cst, u, v, t);
+            Slice ans = fuse_prefix_dummy_slice(cst, u, v, t, t.size());
+
+            if (len != ans.size()) {
+                cout << "FAIL\n";
+                cout << "Test " << (i*RUNS_PER_STRING + j) << ": " << u.apply(t) << " + " << v.apply(t) << " = " << len << "or" << ans.size() << '\n';
+                break;
+            }
+        }
+    }
+
+    cout << "PASS\n";
+}
+
 //returns slice of s or {-1, -1} if no characters are in common
 Slice LCS_slow(string s, string t) {
     CST T;
@@ -1051,8 +1119,84 @@ void test_LCS() {
     cout << "PASS ALL\n";
 }
 
+void test_LCS_different_lengths() {
+    int RUNS_PER_STRING = 100;
+    for (int i = 0; i < 10; i++) {
+        int length_s = randint(1000, 2000);
+        int length_t = randint(1000, 2000);
+        string s = "";
+        string t = "";
+        for (int j = 0; j < length_s; j++) {
+            s += (char) randint('a', 'c');
+        }
+        for (int j = 0; j < length_t; j++) {
+            t += (char) randint('a', 'c');
+        }
+        MaxBlockDecomposition decomp(s, t);
+
+        for (int j = 0; j < RUNS_PER_STRING; j++) {
+            long pos = randint(0, length_s-1);
+            char c = randint('a', 'h');
+            s[pos] = c;
+            //cout << t << '\n';
+            //decomp.print();
+            //decomp.print_candidates();
+            decomp.replace(pos, c);
+            bool result = decomp.validate();
+            if (!result) {
+                cout << "VALIDATE FAIL i: " << i << ", j: " << j << '\n';
+                decomp.print();
+                return;
+            }
+            string LCS_reference = G4G::LCS(s, t);
+            Slice LCS = decomp.get_lcs();
+            if (LCS.size() != LCS_reference.size()) {
+                cout << "FAIL: reference is " << LCS_reference.size() << " calculated is " << LCS.size() << '\n';
+                decomp.print();
+                decomp.print_candidates();
+                return;
+            }
+        }
+        cout << "PASS " << i << '\n';
+    }
+
+    cout << "PASS ALL\n";
+}
+
+void test_traverse() {
+    CST cst;
+    std::string s = "abacad";
+    construct_im(cst, s, 1);
+
+    uint64_t max_depth = 40;
+
+    // use the DFS iterator to traverse `cst`
+    for (auto it=cst.begin(); it!=cst.end(); ++it) {
+        if (it.visit() == 1) {  // node visited the first time
+            auto v = *it;       // get the node by dereferencing the iterator
+            if (cst.depth(v) <= max_depth) {   // if depth node is <= max_depth
+                // process node, e.g. output it in format d-[lb, rb]
+                string s;
+                auto depth = cst.depth(v);
+                for (int i = 1; i <= depth; i++) {
+                    auto res = cst.edge(v, i);
+                    if (res == 0) {
+                        res = '$';
+                    }
+                    s += res;
+                }
+
+                cout<<depth<<"-["<<cst.lb(v)<< ","<<cst.rb(v)<<"]-"<<s<<endl;
+
+            } else { // skip the subtree otherwise
+                it.skip_subtree();
+            }
+        }
+    }
+}
+
 int main() {
-    //test_fuse_substrings_auto();
+    test_LCS_different_lengths();
 
 
     /*string s = "abacadabra";
@@ -1065,7 +1209,8 @@ int main() {
     mbd.test_remove_second();
     cout << mbd.validate() << '\n';*/
 
-    test_LCS();
+    //test_traverse();
+    //test_fuse_substrings();
 
     //string s = "aaaabaa";
     //Slice ans = LCS_slow(s, "aaaba");
