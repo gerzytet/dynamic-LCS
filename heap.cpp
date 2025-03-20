@@ -1,3 +1,6 @@
+#ifndef HEAP_CPP
+#define HEAP_CPP
+
 #include <iostream>
 #include <map>
 
@@ -29,3 +32,5 @@ public:
         std::cout << std::endl;
     }
 };
+
+#endif
