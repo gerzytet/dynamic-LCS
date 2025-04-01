@@ -1,3 +1,6 @@
 [submodule "sdsl-lite"]
 	path = sdsl-lite
 	url = https://github.com/simongog/sdsl-lite.git
+[submodule "range-tree"]
+	path = range-tree
+	url = https://github.com/Lucaweihs/range-tree.git

@@ -1,8 +1,11 @@
 #include <list>
 #include <vector>
+#include <memory>
 
 using std::list;
 using std::vector;
+using std::unique_ptr;
+using std::make_unique;
 
 #include "global.hpp"
 #include "slice.cpp"
@@ -39,6 +42,7 @@ class MaxBlockDecomposition {
     leaf_index T_li;
     leaf_index T_R_li;
     Heap<Slice> candidate_heap;
+    unique_ptr<HIA_RangeTree> range_tree;
 
     public:
     //T is the CST of the reference string
@@ -55,6 +59,7 @@ class MaxBlockDecomposition {
         reverse(t.begin(), t.end());
         T_li   = build_leaf_index(T,   t.size());
         T_R_li = build_leaf_index(T_R, t.size());
+        range_tree = make_unique<HIA_RangeTree>(get_hia_range_tree(T_R, T, t.size()));
         while (index < s.size()) {
             string suffix = s.substr(index);
             Slice slice = longest_consume_slice(T, suffix, t_size);
@@ -140,7 +145,7 @@ class MaxBlockDecomposition {
         } else if (v.start == -1) {
             result = {u.size(), 0};
         } else {
-            result = fuse_substrings_HIA(T, T_R, T_li, T_R_li, t_size, u, v);
+            result = fuse_substrings_HIA(*range_tree.get(), T, T_R, T_li, T_R_li, t_size, u, v);
         }
         long end = get_end(block);
         block->candidate = Slice{end - result.first + 1, end + result.second};

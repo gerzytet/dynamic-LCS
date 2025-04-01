@@ -1,14 +1,24 @@
 #include <unordered_map>
 #include <utility>
+#include "range-tree/RangeTree.h"
 
 using std::unordered_map;
 using std::pair;
+using std::vector;
 
 #include "global.hpp"
 #include "longest_consume.cpp"
 
 #ifndef HIA_CPP
 #define HIA_CPP
+
+struct Void {
+    //not-equal operator
+    bool operator!=(const Void& other) const {
+        return false;
+    }
+};
+using HIA_RangeTree = RangeTree::RangeTree<unsigned long, Void>;
 
 struct TwoSet {
     unordered_map<int, int> counts;
@@ -49,7 +59,60 @@ struct HIAResult {
     }
 };
 
-typedef long(*label_mapper)(const CST &T, Node node, long length);
+void debug_print_node(const CST &T, Node node) {
+    for (int i = 0; i < T.depth(node); i++) {
+        char c = T.edge(node, i+1);
+        cout << (c ? c : '$');
+    }
+    cout << '\n';
+}
+
+typedef unsigned long(*label_mapper)(const CST &T, Node node, unsigned long length);
+unsigned long cst_label_mapper(const CST &T, Node node, unsigned long size) {
+    return size - T.depth(node) + 2;
+}
+
+unsigned long reverse_cst_label_mapper(const CST &T, Node node, unsigned long size) {
+    return T.depth(node);
+}
+
+//Get a RangeTree representing all leaves from the 2 trees with the same labels
+//a point (x, y) existing in the tree means that T1_mapper of leaf #x and T2 mapper of leaf #y are equal
+//in other words, leaf number x and leaf number y have the same label once mapped
+template<label_mapper T1_mapper, label_mapper T2_mapper>
+HIA_RangeTree get_range_tree(const CST &T1, const CST &T2, long length) {
+    vector<RangeTree::Point<unsigned long, Void>> points;
+    unordered_map<unsigned long, unsigned long> T1_mapping;
+    for (auto i = T1.lb(T1.root()); i <= T1.rb(T1.root()); i++) {
+        auto mapped = T1_mapper(T1, T1.select_leaf(i+1), length);
+        T1_mapping[mapped] = i;
+    }
+
+    for (auto i = T2.lb(T2.root()); i <= T2.rb(T2.root()); i++) {
+        auto mapped = T2_mapper(T2, T2.select_leaf(i+1), length);
+        auto T1_leaf = T1_mapping[mapped];
+        points.push_back(RangeTree::Point<unsigned long, Void>({T1_leaf, i}, {}));
+        //debug_print_node(T1, T1.select_leaf(T1_leaf+1));
+        //debug_print_node(T2, T2.select_leaf(i+1));
+        //cout << '\n';
+    }
+
+    HIA_RangeTree tree(points);
+    return tree;
+}
+
+HIA_RangeTree get_hia_range_tree(const CST &T_R, const CST &T, long length) {
+    return get_range_tree<reverse_cst_label_mapper, cst_label_mapper>(T_R, T, length);
+}
+
+bool is_induced(const HIA_RangeTree &rt, const CST &T1, const CST &T2, Node u, Node v) {
+    return rt.countInRange(
+        {T1.lb(u), T2.lb(v)},
+        {T1.rb(u), T2.rb(v)},
+        {true, true},
+        {true, true}
+    ) > 0;
+}
 
 template<label_mapper mapper>
 void flip_subtree_excluding_child(const CST &T, TwoSet &ts, Node root, Node child, int sign, long length) {
@@ -84,7 +147,7 @@ Node select_leaf(CST T, long i) {
 }
 
 template<label_mapper T1_mapper, label_mapper T2_mapper>
-HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long u_length, long v_length, long length) {
+HIAResult dummy_HIA(const HIA_RangeTree &rt, CST &T1, CST &T2, Node u, Node v, long u_length, long v_length, long length) {
     Node t2_root = T2.root();
 
     vector<Node> v_path;
@@ -98,32 +161,13 @@ HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long u_length, long v_leng
     auto v_path_iter = v_path.rbegin();
     auto v_path_end = v_path.rend();
 
-    TwoSet ts;
-    //plan: use 2 pointers approach
-    //v moves down, u moves up
-    //find induced node boundaries, then return HIA
-    long twos = 0;
-    //v_temp is the root at this point
-    Node lb = T2.lb(v_temp);
-    Node rb = T2.rb(v_temp);
-
-    //cout << lb << ' ' << rb << std::endl;
-    for (unsigned long i = lb; i <= rb; i++) {
-        auto to_add = T2_mapper(T2, select_leaf(T2, i+1), length);
-        ts.add(to_add);
-    }
-
-    Node u_temp = u;
-    for (unsigned long i = T1.lb(u_temp); i <= T1.rb(u_temp); i++) {
-        ts.add(T1_mapper(T1, select_leaf(T1, i+1), length));
-    }
-
     Node HIA_1 = u;
     Node HIA_2 = v_temp;
     long HIA_sum = min((uint64_t)u_length, T1.depth(u)) + min((uint64_t)v_length, T2.depth(v_temp));
 
+    Node u_temp = u;
     while (true) {
-        if (ts.twos > 0) {
+        if (is_induced(rt, T1, T2, u_temp, v_temp)) {
             long sum = min((uint64_t)u_length, T1.depth(u_temp)) + min((uint64_t)v_length, T2.depth(v_temp));
             if (sum > HIA_sum) {
                 HIA_1 = u_temp;
@@ -136,15 +180,12 @@ HIAResult dummy_HIA(CST &T1, CST &T2, Node u, Node v, long u_length, long v_leng
             }
             Node v_child = *v_path_iter;
             v_path_iter++;
-            flip_subtree_excluding_child<T2_mapper>(T2, ts, v_temp, v_child, -1, length);
             v_temp = v_child;
         } else {
             if (u_temp == T1.root()) {
                 break;
             }
-            Node u_parent = T1.parent(u_temp);
-            flip_subtree_excluding_child<T1_mapper>(T1, ts, u_parent, u_temp, 1, length);
-            u_temp = u_parent;
+            u_temp = T1.parent(u_temp);
         }
     }
 
@@ -177,14 +218,6 @@ pair<long, long> fuse_substrings(const CST &T, const CST &T_R, const string &s, 
     return ans;
 }
 
-long cst_label_mapper(const CST &T, Node node, long size) {
-    return size - T.depth(node) + 2;
-}
-
-long reverse_cst_label_mapper(const CST &T, Node node, long size) {
-    return T.depth(node);
-}
-
 using leaf_index = sdsl::int_vector<sizeof(sdsl::int_vector_size_type)*8>;
 
 //build an index that lets us quickly find the leaf of the given depth
@@ -209,15 +242,7 @@ Node go_up(const CST &T, Node leaf, long min_depth) {
     return node;
 }
 
-void debug_print_node(const CST &T, Node node) {
-    for (int i = 0; i < T.depth(node); i++) {
-        char c = T.edge(node, i+1);
-        cout << (c ? c : '$');
-    }
-    cout << '\n';
-}
-
-pair<long, long> fuse_substrings_HIA(CST &T, CST &T_R, const leaf_index &li, const leaf_index &li_r, long t_len, Slice u, Slice v) {
+pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, const leaf_index &li, const leaf_index &li_r, long t_len, Slice u, Slice v) {
     //figure out the start position of u in the reversed string, 0 indexed
     long u_start_rev = t_len - u.end - 1;
 
@@ -240,7 +265,7 @@ pair<long, long> fuse_substrings_HIA(CST &T, CST &T_R, const leaf_index &li, con
     //debug_print_node(T, v_node);
 
     HIAResult result = dummy_HIA<reverse_cst_label_mapper, cst_label_mapper>(
-        T_R, T, u_rev_node, v_node, u.size(), v.size(), t_len
+        rt, T_R, T, u_rev_node, v_node, u.size(), v.size(), t_len
     );
 
     //cout << "sum" << result.sum << '\n';
@@ -285,12 +310,13 @@ void test_fuse_substrings() {
     reverse(s_r.begin(), s_r.end());
     construct_im(cst_r, s_r, 1);
     leaf_index li_r = build_leaf_index(cst_r, s.size());
+    HIA_RangeTree rt = get_hia_range_tree(cst_r, cst, s.size());
     int testnum = 0;
     auto test = [&](Slice u, Slice v) {
         testnum++;
         auto ans = fuse_substrings(cst, cst_r, s, u, v);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
-        ans = fuse_substrings_HIA(cst, cst_r, li, li_r, s.size(), u, v);
+        ans = fuse_substrings_HIA(rt, cst, cst_r, li, li_r, s.size(), u, v);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
     };
 
@@ -323,6 +349,7 @@ void test_fuse_substrings_auto() {
         reverse(s_r.begin(), s_r.end());
         construct_im(cst_r, s_r, 1);
         leaf_index li_r = build_leaf_index(cst_r, s.size());
+        HIA_RangeTree rt = get_hia_range_tree(cst, cst_r, s.size());
 
 
         for (int j = 0; j < RUNS_PER_STRING; j++) {
@@ -330,7 +357,7 @@ void test_fuse_substrings_auto() {
             Slice v = randslice(length);
 
             auto ans_base = fuse_substrings(cst, cst_r, s, u, v);
-            auto ans_hia = fuse_substrings_HIA(cst, cst_r, li, li_r, s.size(), u, v);
+            auto ans_hia = fuse_substrings_HIA(rt, cst, cst_r, li, li_r, s.size(), u, v);
 
             int base_len = ans_base.first + ans_base.second;
             int hia_len  = ans_hia.first + ans_hia.second;
