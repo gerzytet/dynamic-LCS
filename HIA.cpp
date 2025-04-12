@@ -193,7 +193,7 @@ HIAResult dummy_HIA(const HIA_RangeTree &rt, CST &T1, CST &T2, Node u, Node v, l
 }
 
 //first element: num characters included from u.  second element for v.
-pair<long, long> fuse_substrings(const CST &T, const CST &T_R, const string &s, Slice u, Slice v) {
+pair<long, long> fuse_substrings(const CST &T, const CST &T_R, const string &s, Slice u, Slice v, ChildIndex &child_index) {
     pair<long, long> ans;
     if (u.size() > v.size()) {
         ans = {u.size(), 0};
@@ -208,7 +208,7 @@ pair<long, long> fuse_substrings(const CST &T, const CST &T_R, const string &s, 
         }
 
         string test_str = u_part.apply(s) + v.apply(s);
-        long l = longest_consume(T, test_str);
+        long l = longest_consume(T, test_str, child_index);
         if (l > ans.first + ans.second) {
             ans = {u_part.size(), l-u_part.size()};
         }
@@ -221,7 +221,7 @@ pair<long, long> fuse_substrings(const CST &T, const CST &T_R, const string &s, 
 using leaf_index = sdsl::int_vector<sizeof(sdsl::int_vector_size_type)*8>;
 
 //build an index that lets us quickly find the leaf of the given depth
-//returns an array where A[i] = the if of the leaf of depth i+1
+//returns an array where A[i] = the id of the leaf of depth i+1
 leaf_index build_leaf_index(const CST &T, long size) {
     leaf_index index(size+1);
     for (Node node : T) {
@@ -248,6 +248,7 @@ pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, 
 
     //then the depth of the leaf node in the reversed suffix tree
     long u_rev_leaf_depth = t_len - u_start_rev + 1;
+    //t_len - t_len + u.end + 1 + 1;
 
     Node u_rev_leaf = T_R.inv_id(li_r[u_rev_leaf_depth-1]);
     //debug_print_node(T_R,u_rev_leaf);
@@ -304,6 +305,7 @@ void test_fuse_substrings() {
     string s = "abacadabra";
     construct_im(cst, s, 1);
     leaf_index li = build_leaf_index(cst, s.size());
+    ChildIndex T_ci(cst);
 
     CST cst_r;
     string s_r = s;
@@ -314,7 +316,7 @@ void test_fuse_substrings() {
     int testnum = 0;
     auto test = [&](Slice u, Slice v) {
         testnum++;
-        auto ans = fuse_substrings(cst, cst_r, s, u, v);
+        auto ans = fuse_substrings(cst, cst_r, s, u, v, T_ci);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
         ans = fuse_substrings_HIA(rt, cst, cst_r, li, li_r, s.size(), u, v);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
@@ -343,6 +345,7 @@ void test_fuse_substrings_auto() {
         CST cst;
         construct_im(cst, s, 1);
         leaf_index li = build_leaf_index(cst, s.size());
+        ChildIndex T_ci(cst);
 
         CST cst_r;
         string s_r = s;
@@ -356,7 +359,7 @@ void test_fuse_substrings_auto() {
             Slice u = randslice(length);
             Slice v = randslice(length);
 
-            auto ans_base = fuse_substrings(cst, cst_r, s, u, v);
+            auto ans_base = fuse_substrings(cst, cst_r, s, u, v, T_ci);
             auto ans_hia = fuse_substrings_HIA(rt, cst, cst_r, li, li_r, s.size(), u, v);
 
             int base_len = ans_base.first + ans_base.second;

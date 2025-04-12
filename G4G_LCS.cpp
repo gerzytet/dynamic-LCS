@@ -7,12 +7,12 @@
 #include<bits/stdc++.h>
 using std::string;
 
+int max_char = 256;
+
 namespace G4G {
 
-#define MAX_CHAR 256
-
 struct SuffixTreeNode {
-	struct SuffixTreeNode *children[MAX_CHAR];
+	struct SuffixTreeNode **children;
 
 	//pointer to other node via suffix link
 	struct SuffixTreeNode *suffixLink;
@@ -34,7 +34,8 @@ struct SuffixTreeNode {
 
 typedef struct SuffixTreeNode Node;
 
-char text[100000]; //Input string
+char text[10000000]; //Input string
+int hashtag_loc = 0; // location of #
 Node *root = NULL; //Pointer to root node
 
 /*lastNewNode will point to newly created internal node,
@@ -63,7 +64,8 @@ int size1 = 0; //Size of 1st string
 
 Node *newNode(int start, int *end) {
 	Node *node = (Node*) malloc(sizeof(Node));
-	for (int i = 0; i < MAX_CHAR; i++) {
+	node->children = (SuffixTreeNode **) malloc(sizeof(SuffixTreeNode*) * max_char);
+	for (int i = 0; i < max_char; i++) {
 		node->children[i] = NULL;
 	}
 
@@ -253,7 +255,7 @@ void setSuffixIndexByDFS(Node *n, int labelHeight)
 	}
 	int leaf = 1;
 	int i;
-	for (i = 0; i < MAX_CHAR; i++)
+	for (i = 0; i < max_char; i++)
 	{
 		if (n->children[i] != NULL)
 		{
@@ -270,14 +272,18 @@ void setSuffixIndexByDFS(Node *n, int labelHeight)
 	}
 	if (leaf == 1)
 	{
-		for (i = n->start; i <= *(n->end); i++)
+		if (hashtag_loc >= n->start && hashtag_loc <= *(n->end)) {
+			n->end = (int*) malloc(sizeof(int));
+			*(n->end) = hashtag_loc;
+		}
+		/*for (i = n->start; i <= *(n->end); i++)
 		{
 			if (text[i] == '#')
 			{
 				n->end = (int*) malloc(sizeof(int));
 				*(n->end) = i;
 			}
-		}
+		}*/
 		n->suffixIndex = size - labelHeight;
 		//Uncomment below line to print suffix index
 		// printf(" [%d]\n", n->suffixIndex);
@@ -289,7 +295,7 @@ void freeSuffixTreeByPostOrder(Node *n)
 	if (n == NULL)
 		return;
 	int i;
-	for (i = 0; i < MAX_CHAR; i++)
+	for (i = 0; i < max_char; i++)
 	{
 		if (n->children[i] != NULL)
 		{
@@ -333,7 +339,7 @@ int doTraversal(Node *n, int labelHeight, int* maxHeight,
 	int ret = -1;
 	if (n->suffixIndex < 0) //If it is internal node
 	{
-		for (i = 0; i < MAX_CHAR; i++)
+		for (i = 0; i < max_char; i++)
 		{
 			if (n->children[i] != NULL)
 			{
@@ -379,10 +385,12 @@ string getLongestCommonSubstring()
     return ans;
 }
 
-string LCS(string a, string b) {
-    size1 = a.size();
-    string combined = a + "#" + b + "$";
+string LCS(string a, string b, char maxchar) {
+    max_char = maxchar + 3;
+	size1 = a.size();
+    string combined = a + (char)(maxchar+1) + b + (char)(maxchar+2);
     strcpy(text, combined.c_str());
+	hashtag_loc = a.size();
     buildSuffixTree();
     string ans = getLongestCommonSubstring();
     freeSuffixTreeByPostOrder(root);

@@ -2,9 +2,13 @@
 #include <cmath>
 #include <sdsl/suffix_arrays.hpp>
 #include <sdsl/suffix_trees.hpp>
+#include <unordered_map>
+#include <optional>
 
 using std::cout;
+using std::optional;
 using std::min;
+using std::unordered_map;
 using sdsl::construct_im;
 
 #ifndef LONGEST_CONSUME_CPP
@@ -14,12 +18,45 @@ using sdsl::construct_im;
 #include "slice.cpp"
 #include "rand_utils.cpp"
 
+class ChildIndex {
+    private:
+    unordered_map<long long, Node> hashmap;
+    long long hash(Node node, char c) const {
+        return (long long) node * 256 + c;
+    }
+    Node root;
+
+    public:
+
+    Node lookup(Node node, char c) const {
+        auto iter = hashmap.find(hash(node, c));
+        if (iter == hashmap.end()) {
+            return root;
+        }
+        return iter->second;
+    }
+
+    ChildIndex(CST &T) {
+        root = T.root();
+        for (Node node : T) {
+            if (node != T.root()) {
+                Node parent = T.parent(node);
+                char c = T.edge(node, T.depth(parent) + 1);
+                hashmap[hash(parent, c)] = node;
+            }
+        }
+    }
+
+    ChildIndex() {}
+};
+
 //return the length of the prefix from s that T can consume
-long longest_consume(const CST &T, const string &s) {
+long longest_consume(const CST &T, const string &s, const ChildIndex &child_index) {
     long index = 0;
     Node node = T.root();
     while (index < s.size()) {
-        Node child = T.child(node, s[index]);
+        //Node child = T.child(node, s[index]);
+        Node child = child_index.lookup(node, s[index]);
         if (child == T.root()) {
             return index;
         }
@@ -38,11 +75,12 @@ long longest_consume(const CST &T, const string &s) {
 
 //len is length of t
 //return the prefix from s that T can consume as a slice
-Slice longest_consume_slice(const CST &T, const string &s, long len) {
+Slice longest_consume_slice(const CST &T, const string &s, long len, ChildIndex &child_index) {
     long index = 0;
     Node node = T.root();
     while (index < s.size()) {
-        Node child = T.child(node, s[index]);
+        //Node child = T.child(node, s[index]);
+        Node child = child_index.lookup(node, s[index]);
         if (child == T.root()) {
             if (index == 0) {
                 return {-1, -1};
@@ -81,10 +119,11 @@ void test_longest_consume_slice() {
         string s = randstring(len, 'a', 'd');
         CST cst;
         construct_im(cst, s, 1);
+        auto child_index = ChildIndex(cst);
 
         for (int j = 0; j < 500; j++) {
             Slice slice = randslice(len);
-            Slice found = longest_consume_slice(cst, slice.apply(s) + 'e', len);
+            Slice found = longest_consume_slice(cst, slice.apply(s) + 'e', len, child_index);
 
             if (!found.is_inbounds(s.size())) {
                 cout << "FAIL NOT IN BOUNDS\n";
@@ -99,12 +138,12 @@ void test_longest_consume_slice() {
     cout << "PASS\n";
 }
 
-long fuse_prefix_dummy(CST &T, Slice u, Slice v, const string &s) {
-    return longest_consume(T, u.apply(s) + v.apply(s));
+long fuse_prefix_dummy(CST &T, Slice u, Slice v, const string &s, ChildIndex &child_index) {
+    return longest_consume(T, u.apply(s) + v.apply(s), child_index);
 }
 
-Slice fuse_prefix_dummy_slice(CST &T, Slice u, Slice v, const string &s, long t_len) {
-    return longest_consume_slice(T, u.apply(s) + v.apply(s), t_len);
+Slice fuse_prefix_dummy_slice(CST &T, Slice u, Slice v, const string &s, long t_len, ChildIndex &child_index) {
+    return longest_consume_slice(T, u.apply(s) + v.apply(s), t_len, child_index);
 }
 
 void test_fuse_prefix() {
@@ -119,13 +158,14 @@ void test_fuse_prefix() {
         }
         CST cst;
         construct_im(cst, t, 1);
+        auto child_index = ChildIndex(cst);
 
         for (int j = 0; j < RUNS_PER_STRING; j++) {
             Slice u = randslice(length);
             Slice v = randslice(length);
 
-            long len = fuse_prefix_dummy(cst, u, v, t);
-            Slice ans = fuse_prefix_dummy_slice(cst, u, v, t, t.size());
+            long len = fuse_prefix_dummy(cst, u, v, t, child_index);
+            Slice ans = fuse_prefix_dummy_slice(cst, u, v, t, t.size(), child_index);
 
             if (len != ans.size()) {
                 cout << "FAIL\n";

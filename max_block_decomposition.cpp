@@ -36,15 +36,23 @@ class MaxBlockDecomposition {
     string t;
     string t_r;
     long t_size;
-    list<Block> blocks;
     CST T;
     CST T_R;
     leaf_index T_li;
     leaf_index T_R_li;
     Heap<Slice> candidate_heap;
     unique_ptr<HIA_RangeTree> range_tree;
+    ChildIndex T_ci;
+    ChildIndex T_R_ci;
+
 
     public:
+    list<Block> blocks;
+
+    MaxBlockDecomposition() {
+
+    }
+
     //T is the CST of the reference string
     //s is the string being decomposed.
     MaxBlockDecomposition(string s, string t) {
@@ -59,10 +67,12 @@ class MaxBlockDecomposition {
         reverse(t.begin(), t.end());
         T_li   = build_leaf_index(T,   t.size());
         T_R_li = build_leaf_index(T_R, t.size());
+        T_ci = ChildIndex(T);
+        T_R_ci = ChildIndex(T_R);
         range_tree = make_unique<HIA_RangeTree>(get_hia_range_tree(T_R, T, t.size()));
         while (index < s.size()) {
             string suffix = s.substr(index);
-            Slice slice = longest_consume_slice(T, suffix, t_size);
+            Slice slice = longest_consume_slice(T, suffix, t_size, T_ci);
             long block_len = slice.size();
             if (block_len == 0) {
                 block_len = 1;
@@ -109,7 +119,7 @@ class MaxBlockDecomposition {
             if (u1.start == -1 || u2.start == -1) {
                 u = u1;
             } else {
-                Slice ans = fuse_prefix_dummy_slice(T_R, u1_rev, u2_rev, t_r, t_size);
+                Slice ans = fuse_prefix_dummy_slice(T_R, u1_rev, u2_rev, t_r, t_size, T_R_ci);
                 u = reverse_slice(ans, t_size);
             }
         }
@@ -131,7 +141,7 @@ class MaxBlockDecomposition {
                 if (v1.start == -1 || v2.start == -1) {
                     v = v1;
                 } else {
-                    v = fuse_prefix_dummy_slice(T, v1, v2, t, t_size);
+                    v = fuse_prefix_dummy_slice(T, v1, v2, t, t_size, T_ci);
                 }
             }
         }
@@ -190,7 +200,7 @@ class MaxBlockDecomposition {
         auto slices = get_slices();
         for (Slice slice : slices) {
             string block = slice.apply(s);
-            long len = longest_consume(T, block);
+            long len = longest_consume(T, block, T_ci);
             bool size_match = len == block.size();
             bool single_char_exception = block.size() == 1 && len == 0;
             if (!(size_match || single_char_exception)) {
@@ -201,14 +211,14 @@ class MaxBlockDecomposition {
         for (long i = 0; i < slices.size()-1; i++) {
             string block = slices[i].apply(s);
             string next = slices[i+1].apply(s);
-            if (longest_consume(T, block+next) == (block.size() + next.size())) {
+            if (longest_consume(T, block+next, T_ci) == (block.size() + next.size())) {
                 return false;
             }
         }
 
         for (auto iter = blocks.begin(); iter != blocks.end(); iter++) {
             string candidate = get_candidate_string(iter);
-            if (longest_consume(T, candidate) != candidate.size()) {
+            if (longest_consume(T, candidate, T_ci) != candidate.size()) {
                 return false;
             }
         }
@@ -319,7 +329,7 @@ class MaxBlockDecomposition {
             insert_and_recalc(next, Block(pos+1));
         }
         string test_string(1, s[iter_temp->start]);
-        iter_temp->t_start = longest_consume_slice(T, test_string, t_size).start;
+        iter_temp->t_start = longest_consume_slice(T, test_string, t_size, T_ci).start;
 
         if (iter != blocks.begin()) {
             iter--;
@@ -332,7 +342,7 @@ class MaxBlockDecomposition {
             }
             if (curr_end == s.size()-1) {
                 Slice slice{curr_start, curr_end};
-                long len = longest_consume(T, slice.apply(s));
+                long len = longest_consume(T, slice.apply(s), T_ci);
                 //handle single character exception
                 if (len == 0) {
                     len = 1;
@@ -353,7 +363,7 @@ class MaxBlockDecomposition {
 
                 Slice curr_slice = {curr_start, curr_end};
                 Slice next_slice = {next_start, next_end};
-                Slice slice = fuse_prefix_dummy_slice(T, curr_slice, next_slice, s, t_size);
+                Slice slice = fuse_prefix_dummy_slice(T, curr_slice, next_slice, s, t_size, T_ci);
                 long len = slice.size();
                 if (len == 0) {
                     len = 1;
@@ -426,6 +436,7 @@ class MaxBlockDecomposition {
         }
     }
 
+    //returns slice of s
     Slice get_lcs() {
         return candidate_heap.get_highest();
     }
