@@ -32,7 +32,9 @@ struct Block {
 using block_iter = list<Block>::iterator;
 
 class MaxBlockDecomposition {
+    public:
     string s;
+    private:
     string t;
     string t_r;
     long t_size;
@@ -45,6 +47,9 @@ class MaxBlockDecomposition {
     ChildIndex T_ci;
     ChildIndex T_R_ci;
 
+    //def plus(a, b): return a + b;
+    //
+
 
     public:
     list<Block> blocks;
@@ -53,25 +58,34 @@ class MaxBlockDecomposition {
 
     }
 
+
     //T is the CST of the reference string
     //s is the string being decomposed.
-    MaxBlockDecomposition(string s, string t) {
+    MaxBlockDecomposition(string s, string t, bool trace = false) {
         long index = 0;
         t_size = t.size();
         this->s = s;
         this->t = t;
         construct_im(T, t, 1);
+        if (trace) cout << "T done" << std::endl;
         reverse(t.begin(), t.end());
         this->t_r = t;
         construct_im(T_R, t, 1);
+        if (trace) cout << "T_R done" << std::endl;
         reverse(t.begin(), t.end());
         T_li   = build_leaf_index(T,   t.size());
+        if (trace) cout << "T_li done" << std::endl;
         T_R_li = build_leaf_index(T_R, t.size());
+        if (trace) cout << "T_R_li done" << std::endl;
         T_ci = ChildIndex(T);
+        if (trace) cout << "T_ci done" << std::endl;
         T_R_ci = ChildIndex(T_R);
+        if (trace) cout << "T_R_ci done" << std::endl;
         range_tree = make_unique<HIA_RangeTree>(get_hia_range_tree(T_R, T, t.size()));
+        if (trace) cout << "range tree done" << std::endl;
+
         while (index < s.size()) {
-            string suffix = s.substr(index);
+            string_view suffix(s.c_str()+index, s.size()-index);
             Slice slice = longest_consume_slice(T, suffix, t_size, T_ci);
             long block_len = slice.size();
             if (block_len == 0) {
@@ -82,6 +96,7 @@ class MaxBlockDecomposition {
             blocks.push_back(block);
             index += block_len;
         }
+        cout << "Initial blocks zoned" << std::endl;
 
         for (auto iter = blocks.begin(); iter != blocks.end(); iter++) {
             recalculate(iter);
@@ -208,11 +223,13 @@ class MaxBlockDecomposition {
             }
         }
 
-        for (long i = 0; i < slices.size()-1; i++) {
-            string block = slices[i].apply(s);
-            string next = slices[i+1].apply(s);
-            if (longest_consume(T, block+next, T_ci) == (block.size() + next.size())) {
-                return false;
+        if (slices.size() > 0) {
+            for (long i = 0; i < slices.size()-1; i++) {
+                string block = slices[i].apply(s);
+                string next = slices[i+1].apply(s);
+                if (longest_consume(T, block+next, T_ci) == (block.size() + next.size())) {
+                    return false;
+                }
             }
         }
 
@@ -257,8 +274,11 @@ class MaxBlockDecomposition {
         return next->start - 1;
     }
 
-    void replace(long pos, char c) {
-        if (s[pos] == c) {
+    //if force_recalc is true, the internal data structures get recalculated
+    //even if s[pos] is already c
+    //this behavior is used internally
+    void replace(long pos, char c, bool force_recalc = false) {
+        if (s[pos] == c && !force_recalc) {
             return;
         }
         s[pos] = c;
@@ -427,6 +447,30 @@ class MaxBlockDecomposition {
         }
     }
 
+    //TODO:
+    //append and unappend assume that NUL never appears in the input data
+    //maybe work on this?
+    void append(char c) {
+        s += (c^1); //append arbitrary character that isn't c
+        blocks.push_back(Block(s.size()-1));
+        replace(s.size()-1, c);
+    }
+
+    void unappend() {
+        block_iter last_block = --blocks.end();
+        if (get_block_size(last_block) == 1) {
+            candidate_heap.remove(last_block->candidate);
+            blocks.erase(last_block);
+        }
+        s.erase(s.begin() + (s.size()-1));
+        if (blocks.size() == 0) {
+            return;
+        }
+        last_block = --blocks.end();
+
+        replace(s.size()-1, s[s.size()-1], true);
+    }
+
     void print_candidates() {
         int index = 0;
         for (auto iter = blocks.begin(); iter != blocks.end(); iter++) {
@@ -438,6 +482,9 @@ class MaxBlockDecomposition {
 
     //returns slice of s
     Slice get_lcs() {
+        if (candidate_heap.size() == 0) {
+            return {0, -1};
+        }
         return candidate_heap.get_highest();
     }
 };

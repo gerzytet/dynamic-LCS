@@ -3,6 +3,7 @@
 
 #include <sdsl/suffix_arrays.hpp>
 #include <sdsl/suffix_trees.hpp>
+#include "config.h"
 
 using Node = sdsl::int_vector_size_type;
 using CST = sdsl::cst_sada<sdsl::csa_wt<>,

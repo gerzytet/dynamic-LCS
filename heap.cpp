@@ -31,6 +31,10 @@ public:
         }
         std::cout << std::endl;
     }
+
+    size_t size() {
+        return heap.size();
+    }
 };
 
 #endif

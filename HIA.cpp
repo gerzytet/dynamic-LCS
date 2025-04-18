@@ -97,6 +97,7 @@ HIA_RangeTree get_range_tree(const CST &T1, const CST &T2, long length) {
         //cout << '\n';
     }
 
+    cout << "calculated range tree points" << std::endl;
     HIA_RangeTree tree(points);
     return tree;
 }
@@ -166,9 +167,15 @@ HIAResult dummy_HIA(const HIA_RangeTree &rt, CST &T1, CST &T2, Node u, Node v, l
     long HIA_sum = min((uint64_t)u_length, T1.depth(u)) + min((uint64_t)v_length, T2.depth(v_temp));
 
     Node u_temp = u;
+    auto u_depth = T1.depth(u_temp);
+    bool u_depth_dirty = false;
     while (true) {
         if (is_induced(rt, T1, T2, u_temp, v_temp)) {
-            long sum = min((uint64_t)u_length, T1.depth(u_temp)) + min((uint64_t)v_length, T2.depth(v_temp));
+            if (u_depth_dirty) {
+                u_depth = T1.depth(u_temp);
+                u_depth_dirty = false;
+            }
+            long sum = min((uint64_t)u_length, u_depth) + min((uint64_t)v_length, T2.depth(v_temp));
             if (sum > HIA_sum) {
                 HIA_1 = u_temp;
                 HIA_2 = v_temp;
@@ -186,6 +193,7 @@ HIAResult dummy_HIA(const HIA_RangeTree &rt, CST &T1, CST &T2, Node u, Node v, l
                 break;
             }
             u_temp = T1.parent(u_temp);
+            u_depth_dirty = true;
         }
     }
 
@@ -226,10 +234,35 @@ leaf_index build_leaf_index(const CST &T, long size) {
     leaf_index index(size+1);
     for (Node node : T) {
         if (T.is_leaf(node)) {
-            index[T.depth(node)-1] = T.id(node);
+            index[T.depth(node)-1] = node;
         }
     }
     return index;
+}
+
+Node get_leaf_of_depth(const CST &T, long depth, long t_len) {
+    long suffix_index = t_len - depth + 1;
+    long suffix_order = T.csa.isa[suffix_index];
+    if (depth == 1) {
+        return T.child(T.root(), '\0');
+    }
+    return T.select_leaf(suffix_order + 1);
+}
+
+void test_leaf_index() {
+    string s = "abacadabra";
+    CST T;
+    construct_im(T, s, 1);
+    leaf_index li = build_leaf_index(T, s.size());
+    for (int i = 0; i <= s.size(); i++) {
+        cout << T.csa.isa[i] << ' ';
+    }
+    cout << '\n';
+    for (int i = 1; i <= s.size(); i++) {
+        Node ref = li[i-1];
+        Node test = get_leaf_of_depth(T, i, s.size());
+        cout << T.depth(ref) << ' ' << T.depth(test) << '\n';
+    }
 }
 
 //return the node resulting from finding the lowest depth >= min_depth in the path from the root to the leaf
@@ -250,7 +283,7 @@ pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, 
     long u_rev_leaf_depth = t_len - u_start_rev + 1;
     //t_len - t_len + u.end + 1 + 1;
 
-    Node u_rev_leaf = T_R.inv_id(li_r[u_rev_leaf_depth-1]);
+    Node u_rev_leaf = li_r[u_rev_leaf_depth-1];
     //debug_print_node(T_R,u_rev_leaf);
 
     //debug_print_node(T_R, u_rev_leaf);
@@ -259,7 +292,7 @@ pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, 
 
 
     long v_leaf_depth = t_len - v.start + 1;
-    Node v_leaf = T.inv_id(li[v_leaf_depth-1]);
+    Node v_leaf = li[v_leaf_depth-1];
     //debug_print_node(T,v_leaf);
     //debug_print_node(T, v_leaf);
     Node v_node = go_up(T, v_leaf, v.size());

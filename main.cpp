@@ -69,7 +69,8 @@ void test_initial_blocks_different_lengths() {
     cout << "PASS\n";
 }
 
-void test_LCS_different_lengths(int strings, int length_average, int runs_per_string, int validate_frequency) {
+//max_op 1 = replace only, 2 = append and replace, 3 = pop and 2
+void test_LCS_different_lengths(int strings, int length_average, int runs_per_string, int validate_frequency, int max_op) {
     for (int i = 0; i < strings; i++) {
         int length_s = randint(length_average/2, length_average+length_average/2);
         int length_t = randint(length_average/2, length_average+length_average/2);
@@ -85,13 +86,41 @@ void test_LCS_different_lengths(int strings, int length_average, int runs_per_st
         cout << decomp.blocks.size() << '\n';
 
         for (int j = 0; j < runs_per_string; j++) {
-            long pos = randint(0, length_s-1);
+            if (j == 697) {
+                cout << "MERP";
+            }
+            long pos = randint(0, s.size()-1);
+            int op = randint(1, max_op);
             char c = randint('a', 'd');
-            s[pos] = c;
+
+            if (op == 1) {
+                if (s == "") {
+                    s += c;
+                    decomp.append(c);
+                } else {
+                    s[pos] = c;
+                    decomp.replace(pos, c);
+                }
+            } else if (op == 2) {
+                s += c;
+                decomp.append(c);
+            } else if (op == 3) {
+                if (s == "") {
+                    decomp.append(c);
+                    s += c;
+                } else {
+                    decomp.unappend();
+                    s.erase(--s.end());
+                }
+            }
+            if (decomp.s != s) {
+                cout << "BADDDD\n";
+            }
+
             //cout << t << '\n';
             //decomp.print();
             //decomp.print_candidates();
-            decomp.replace(pos, c);
+
             if (validate_frequency != 0 && (j+1) % validate_frequency == 0) {
                 bool result = decomp.validate();
                 if (!result) {
@@ -194,6 +223,8 @@ int main() {
     //auto mbd = MaxBlockDecomposition("aabababc", "aacbbcabc");
     //mbd.print();
     //test_initial_blocks_different_lengths();
-    //test_LCS_different_lengths(3, 200000, 2000, 0);
-    performance_comparison();
+    //test_LCS_different_lengths(3, 200000, 2000, 500);
+    //test_LCS_different_lengths(3, 50, 2000, 1, 3);
+    test_leaf_index();
+    //performance_comparison();
 }

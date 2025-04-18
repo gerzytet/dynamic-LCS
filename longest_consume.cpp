@@ -4,12 +4,14 @@
 #include <sdsl/suffix_trees.hpp>
 #include <unordered_map>
 #include <optional>
+#include <string_view>
 
 using std::cout;
 using std::optional;
 using std::min;
 using std::unordered_map;
 using sdsl::construct_im;
+using std::string_view;
 
 #ifndef LONGEST_CONSUME_CPP
 #define LONGEST_CONSUME_CPP
@@ -37,6 +39,7 @@ class ChildIndex {
     }
 
     ChildIndex(CST &T) {
+        #ifdef USE_CHILD_INDEX
         root = T.root();
         for (Node node : T) {
             if (node != T.root()) {
@@ -45,10 +48,18 @@ class ChildIndex {
                 hashmap[hash(parent, c)] = node;
             }
         }
+        #endif
+
     }
 
     ChildIndex() {}
 };
+
+#ifdef USE_CHILD_INDEX
+    #define LOOKUP_CHILD(T, child_index, node, c) child_index.lookup(node, c);
+#else
+    #define LOOKUP_CHILD(T, child_index, node, c) T.child(node, c)
+#endif
 
 //return the length of the prefix from s that T can consume
 long longest_consume(const CST &T, const string &s, const ChildIndex &child_index) {
@@ -56,7 +67,7 @@ long longest_consume(const CST &T, const string &s, const ChildIndex &child_inde
     Node node = T.root();
     while (index < s.size()) {
         //Node child = T.child(node, s[index]);
-        Node child = child_index.lookup(node, s[index]);
+        Node child = LOOKUP_CHILD(T, child_index, node, s[index]);
         if (child == T.root()) {
             return index;
         }
@@ -75,12 +86,12 @@ long longest_consume(const CST &T, const string &s, const ChildIndex &child_inde
 
 //len is length of t
 //return the prefix from s that T can consume as a slice
-Slice longest_consume_slice(const CST &T, const string &s, long len, ChildIndex &child_index) {
+Slice longest_consume_slice(const CST &T, string_view s, long len, ChildIndex &child_index) {
     long index = 0;
     Node node = T.root();
     while (index < s.size()) {
         //Node child = T.child(node, s[index]);
-        Node child = child_index.lookup(node, s[index]);
+        Node child = LOOKUP_CHILD(T, child_index, node, s[index]);
         if (child == T.root()) {
             if (index == 0) {
                 return {-1, -1};
