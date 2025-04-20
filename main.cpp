@@ -86,9 +86,6 @@ void test_LCS_different_lengths(int strings, int length_average, int runs_per_st
         cout << decomp.blocks.size() << '\n';
 
         for (int j = 0; j < runs_per_string; j++) {
-            if (j == 697) {
-                cout << "MERP";
-            }
             long pos = randint(0, s.size()-1);
             int op = randint(1, max_op);
             char c = randint('a', 'd');
@@ -225,6 +222,11 @@ int main() {
     //test_initial_blocks_different_lengths();
     //test_LCS_different_lengths(3, 200000, 2000, 500);
     //test_LCS_different_lengths(3, 50, 2000, 1, 3);
-    test_leaf_index();
+    string s = "";
+    for (int i = 0; i < 1000000; i++) { //1MB
+        s += randint('a', 'z');
+    }
+    MaxBlockDecomposition mbd("", s, true);
+    //test_leaf_index();
     //performance_comparison();
 }

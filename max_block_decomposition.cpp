@@ -40,8 +40,6 @@ class MaxBlockDecomposition {
     long t_size;
     CST T;
     CST T_R;
-    leaf_index T_li;
-    leaf_index T_R_li;
     Heap<Slice> candidate_heap;
     unique_ptr<HIA_RangeTree> range_tree;
     ChildIndex T_ci;
@@ -73,10 +71,6 @@ class MaxBlockDecomposition {
         construct_im(T_R, t, 1);
         if (trace) cout << "T_R done" << std::endl;
         reverse(t.begin(), t.end());
-        T_li   = build_leaf_index(T,   t.size());
-        if (trace) cout << "T_li done" << std::endl;
-        T_R_li = build_leaf_index(T_R, t.size());
-        if (trace) cout << "T_R_li done" << std::endl;
         T_ci = ChildIndex(T);
         if (trace) cout << "T_ci done" << std::endl;
         T_R_ci = ChildIndex(T_R);
@@ -170,7 +164,7 @@ class MaxBlockDecomposition {
         } else if (v.start == -1) {
             result = {u.size(), 0};
         } else {
-            result = fuse_substrings_HIA(*range_tree.get(), T, T_R, T_li, T_R_li, t_size, u, v);
+            result = fuse_substrings_HIA(*range_tree.get(), T, T_R, t_size, u, v);
         }
         long end = get_end(block);
         block->candidate = Slice{end - result.first + 1, end + result.second};

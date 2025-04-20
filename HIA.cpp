@@ -83,12 +83,14 @@ template<label_mapper T1_mapper, label_mapper T2_mapper>
 HIA_RangeTree get_range_tree(const CST &T1, const CST &T2, long length) {
     vector<RangeTree::Point<unsigned long, Void>> points;
     unordered_map<unsigned long, unsigned long> T1_mapping;
-    for (auto i = T1.lb(T1.root()); i <= T1.rb(T1.root()); i++) {
+    auto rb = T1.rb(T1.root());
+    for (auto i = T1.lb(T1.root()); i <= rb; i++) {
         auto mapped = T1_mapper(T1, T1.select_leaf(i+1), length);
         T1_mapping[mapped] = i;
     }
 
-    for (auto i = T2.lb(T2.root()); i <= T2.rb(T2.root()); i++) {
+    rb = T2.rb(T2.root());
+    for (auto i = T2.lb(T2.root()); i <= rb; i++) {
         auto mapped = T2_mapper(T2, T2.select_leaf(i+1), length);
         auto T1_leaf = T1_mapping[mapped];
         points.push_back(RangeTree::Point<unsigned long, Void>({T1_leaf, i}, {}));
@@ -96,6 +98,8 @@ HIA_RangeTree get_range_tree(const CST &T1, const CST &T2, long length) {
         //debug_print_node(T2, T2.select_leaf(i+1));
         //cout << '\n';
     }
+    //free up memory
+    T1_mapping.clear();
 
     cout << "calculated range tree points" << std::endl;
     HIA_RangeTree tree(points);
@@ -240,8 +244,8 @@ leaf_index build_leaf_index(const CST &T, long size) {
     return index;
 }
 
-Node get_leaf_of_depth(const CST &T, long depth, long t_len) {
-    long suffix_index = t_len - depth + 1;
+Node find_leaf_of_depth(const CST &T, long depth) {
+    long suffix_index = T.rb(T.root()) - depth + 1;
     long suffix_order = T.csa.isa[suffix_index];
     if (depth == 1) {
         return T.child(T.root(), '\0');
@@ -260,7 +264,7 @@ void test_leaf_index() {
     cout << '\n';
     for (int i = 1; i <= s.size(); i++) {
         Node ref = li[i-1];
-        Node test = get_leaf_of_depth(T, i, s.size());
+        Node test = find_leaf_of_depth(T, i);
         cout << T.depth(ref) << ' ' << T.depth(test) << '\n';
     }
 }
@@ -275,7 +279,7 @@ Node go_up(const CST &T, Node leaf, long min_depth) {
     return node;
 }
 
-pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, const leaf_index &li, const leaf_index &li_r, long t_len, Slice u, Slice v) {
+pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, long t_len, Slice u, Slice v) {
     //figure out the start position of u in the reversed string, 0 indexed
     long u_start_rev = t_len - u.end - 1;
 
@@ -283,7 +287,7 @@ pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, 
     long u_rev_leaf_depth = t_len - u_start_rev + 1;
     //t_len - t_len + u.end + 1 + 1;
 
-    Node u_rev_leaf = li_r[u_rev_leaf_depth-1];
+    Node u_rev_leaf = find_leaf_of_depth(T_R, u_rev_leaf_depth);
     //debug_print_node(T_R,u_rev_leaf);
 
     //debug_print_node(T_R, u_rev_leaf);
@@ -292,7 +296,7 @@ pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, 
 
 
     long v_leaf_depth = t_len - v.start + 1;
-    Node v_leaf = li[v_leaf_depth-1];
+    Node v_leaf = find_leaf_of_depth(T, v_leaf_depth);
     //debug_print_node(T,v_leaf);
     //debug_print_node(T, v_leaf);
     Node v_node = go_up(T, v_leaf, v.size());
@@ -337,21 +341,19 @@ void test_fuse_substrings() {
     ////////////0123456789
     string s = "abacadabra";
     construct_im(cst, s, 1);
-    leaf_index li = build_leaf_index(cst, s.size());
     ChildIndex T_ci(cst);
 
     CST cst_r;
     string s_r = s;
     reverse(s_r.begin(), s_r.end());
     construct_im(cst_r, s_r, 1);
-    leaf_index li_r = build_leaf_index(cst_r, s.size());
     HIA_RangeTree rt = get_hia_range_tree(cst_r, cst, s.size());
     int testnum = 0;
     auto test = [&](Slice u, Slice v) {
         testnum++;
         auto ans = fuse_substrings(cst, cst_r, s, u, v, T_ci);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
-        ans = fuse_substrings_HIA(rt, cst, cst_r, li, li_r, s.size(), u, v);
+        ans = fuse_substrings_HIA(rt, cst, cst_r, s.size(), u, v);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
     };
 
@@ -377,14 +379,12 @@ void test_fuse_substrings_auto() {
         }
         CST cst;
         construct_im(cst, s, 1);
-        leaf_index li = build_leaf_index(cst, s.size());
         ChildIndex T_ci(cst);
 
         CST cst_r;
         string s_r = s;
         reverse(s_r.begin(), s_r.end());
         construct_im(cst_r, s_r, 1);
-        leaf_index li_r = build_leaf_index(cst_r, s.size());
         HIA_RangeTree rt = get_hia_range_tree(cst, cst_r, s.size());
 
 
@@ -393,7 +393,7 @@ void test_fuse_substrings_auto() {
             Slice v = randslice(length);
 
             auto ans_base = fuse_substrings(cst, cst_r, s, u, v, T_ci);
-            auto ans_hia = fuse_substrings_HIA(rt, cst, cst_r, li, li_r, s.size(), u, v);
+            auto ans_hia = fuse_substrings_HIA(rt, cst, cst_r, s.size(), u, v);
 
             int base_len = ans_base.first + ans_base.second;
             int hia_len  = ans_hia.first + ans_hia.second;

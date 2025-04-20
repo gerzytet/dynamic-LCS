@@ -17,7 +17,7 @@ int main() {
     string t;
 
     string line;
-    int limit = 100000;
+    int limit = -1;
     while (getline(infile, line)) {
         t += line + '\n';
         if (!limit--) {
