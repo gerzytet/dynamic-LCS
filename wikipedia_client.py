@@ -1,6 +1,7 @@
 import sys
 import random
 from PySide6 import QtCore, QtWidgets, QtGui
+import socket
 
 #single line search result, with matched text highlighted
 class SearchResult(QtWidgets.QWidget):
@@ -18,23 +19,69 @@ class SearchResult(QtWidgets.QWidget):
         self.layout.addWidget(self.label)
 
         #highlight the matched text
-        self.label.setText(self.text[:self.start] + "<b>" + self.text[self.start:self.end] + "</b>" + self.text[self.end:])
+        self.label.setText(self.text[:self.start] + "<b>" + self.text[self.start:self.end+1] + "</b>" + self.text[self.end+1:])
         self.label.setTextFormat(QtCore.Qt.RichText)
         self.label.setTextInteractionFlags(QtCore.Qt.TextBrowserInteraction)
 
+def calc_diff(s, t):
+    i = 0
+    diff = ""
+    while i < len(s) and i < len(t):
+        if (s[i] != t[i]):
+            diff += "r" + str(i) + t[i]
+        i += 1
+    if (i < len(t)):
+        diff += ''.join(['+' + c for c in t[i:]])
+    if (i < len(s)):
+        diff += "-"*len(s[i:])
+    return diff
+
+def get_reply():
+    data = ""
+    while '\n\n' not in data:
+        data += s.recv(1024).decode()
+    return data
+
+def search_results_from_reply(reply):
+    ans = []
+    lines = reply.split('\n')
+    lines = lines[1:-2]
+    for i in range(0, len(lines), 3):
+        title = lines[i]
+        start = int(lines[i+1])
+        end = int(lines[i+2])
+        ans.append(SearchResult(title, start, end))
+    return ans
+
 class MyWidget(QtWidgets.QWidget):
+
     def onedit(self, text):
-        print("Text changed:", text)
+        diff = calc_diff(self.prev_text, text)
+        self.prev_text = text
+        print("diff:", diff)
+        s.sendall((diff + '\n').encode())
+        reply = get_reply()
+        results = search_results_from_reply(reply)
+        for result in self.results:
+            result.deleteLater()
+        self.results = []
+        i = 1
+        for result in results:
+            self.layout.insertWidget(i, result)
+            self.results.append(result)
+            i += 1
 
     def __init__(self):
+        print("init")
+        self.prev_text = ""
         super().__init__()
         self.layout = QtWidgets.QVBoxLayout(self)
+        self.results = []
+
+        top_text = QtWidgets.QLabel("Results: ")
+        self.layout.addWidget(top_text)
 
         #test search result
-        search_result = SearchResult("Hello World", 0, 5)
-        self.layout.addWidget(search_result)
-        search_result = SearchResult("Hello World", 0, 5)
-        self.layout.addWidget(search_result)
         self.layout.addStretch()
 
         search_field = QtWidgets.QLineEdit()
@@ -45,10 +92,8 @@ class MyWidget(QtWidgets.QWidget):
         self.layout.addWidget(search_field)
 
 
-    @QtCore.Slot()
-    def magic(self):
-        self.text.setText(random.choice(self.hello))
-
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(('127.0.0.1', 19921))
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
@@ -62,7 +107,7 @@ if __name__ == "__main__":
     QLineEdit {
         font-size: 16px;
         min-height: 30px;
-        qproperty-alignment: 'AlignCenter';
+        qproperty-alignment: 'AlignLeft';
     }
     '''
     )

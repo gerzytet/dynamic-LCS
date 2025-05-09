@@ -222,11 +222,13 @@ int main() {
     //test_initial_blocks_different_lengths();
     //test_LCS_different_lengths(3, 200000, 2000, 500);
     //test_LCS_different_lengths(3, 50, 2000, 1, 3);
-    string s = "";
+    /*string s = "";
     for (int i = 0; i < 1000000; i++) { //1MB
         s += randint('a', 'z');
     }
-    MaxBlockDecomposition mbd("", s, true);
+    MaxBlockDecomposition mbd("", s, true);*/
+
+    test_longest_consume_slices();
     //test_leaf_index();
     //performance_comparison();
 }

@@ -105,6 +105,7 @@ HIA_RangeTree get_range_tree(const CST &T1, const CST &T2, long length) {
     HIA_RangeTree tree(points);
     return tree;
 }
+//plan:
 
 HIA_RangeTree get_hia_range_tree(const CST &T_R, const CST &T, long length) {
     return get_range_tree<reverse_cst_label_mapper, cst_label_mapper>(T_R, T, length);

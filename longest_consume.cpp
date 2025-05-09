@@ -108,8 +108,7 @@ Slice longest_consume_slice(const CST &T, string_view s, long len, ChildIndex &c
                 if (index == 0) {
                     return {-1, -1};
                 }
-                long d = T.depth(T.leftmost_leaf(child));
-                long start = len - d + 1;
+                long start = len - T.depth(T.leftmost_leaf(child)); + 1;
                 long end = start + index - 1;
                 return {start, end};
             }
@@ -122,6 +121,53 @@ Slice longest_consume_slice(const CST &T, string_view s, long len, ChildIndex &c
     long start = len - T.depth(T.leftmost_leaf(node)) + 1;
     long end = start + index - 1;
     return {start, end};
+}
+
+//len is length of t
+//return the prefixes from s that T can consume as a slice
+vector<Slice> longest_consume_slices(const CST &T, string_view s, long len, int limit, ChildIndex &child_index) {
+    long index = 0;
+    Node node = T.root();
+    auto output = [&](Node node) {
+        vector<Slice> ans;
+        auto rb = T.rb(node);
+        auto lb = T.lb(node);
+        if (limit != -1) {
+            rb = min(rb, lb + limit - 1);
+        }
+        for (long i = lb; i <= rb; i++) {
+            long start = len - T.depth(T.select_leaf(i+1)) + 1;
+            long end = start + index - 1;
+            ans.push_back({start, end});
+        }
+        return ans;
+    };
+    while (index < s.size()) {
+        //Node child = T.child(node, s[index]);
+        Node child = LOOKUP_CHILD(T, child_index, node, s[index]);
+        if (child == T.root()) {
+            if (index == 0) {
+                return {};
+            }
+            return output(node);
+        }
+        long limit = min(T.depth(child), s.size());
+        while (index < limit) {
+            if (s[index] == T.edge(child, index+1)) {
+                index++;
+            } else {
+                if (index == 0) {
+                    return {};
+                }
+                return output(child);
+            }
+        }
+        node = child;
+    }
+    if (index == 0) {
+        return {};
+    }
+    return output(node);
 }
 
 void test_longest_consume_slice() {
@@ -143,6 +189,33 @@ void test_longest_consume_slice() {
             if (slice.apply(s) != found.apply(s)) {
                 cout << "FAIL NOT EQUAL\n";
                 return;
+            }
+        }
+    }
+    cout << "PASS\n";
+}
+
+void test_longest_consume_slices() {
+    for (int i = 0; i < 100; i++) {
+        int len = randint(2, 500);
+        string s = randstring(len, 'a', 'd');
+        CST cst;
+        construct_im(cst, s, 1);
+        auto child_index = ChildIndex(cst);
+
+        for (int j = 0; j < 500; j++) {
+            Slice slice = randslice(len);
+            vector<Slice> founds = longest_consume_slices(cst, slice.apply(s) + 'e', len, -1, child_index);
+
+            for (auto found : founds) {
+                if (!found.is_inbounds(s.size())) {
+                    cout << "FAIL NOT IN BOUNDS\n";
+                    return;
+                }
+                if (slice.apply(s) != found.apply(s)) {
+                    cout << "FAIL NOT EQUAL\n";
+                    return;
+                }
             }
         }
     }

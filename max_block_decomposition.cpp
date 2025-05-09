@@ -481,6 +481,12 @@ class MaxBlockDecomposition {
         }
         return candidate_heap.get_highest();
     }
+
+    //get all the locations in t where the given slice of s appears
+    //warning: slow
+    vector<Slice> get_t_matches(Slice lcs, int limit) {
+        return longest_consume_slices(T, lcs.apply(s), t_size, limit, T_ci);
+    }
 };
 
 #endif
