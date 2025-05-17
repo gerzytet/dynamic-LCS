@@ -136,7 +136,7 @@ int main() {
     }
 
     string line;
-    int limit = 250000;
+    int limit = -1;
     while (getline(infile, line)) {
         for (char &c : line) {
             if (c == '_') {

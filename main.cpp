@@ -219,16 +219,44 @@ int main() {
 
     //auto mbd = MaxBlockDecomposition("aabababc", "aacbbcabc");
     //mbd.print();
+    //test_fuse_substrings_auto();
     //test_initial_blocks_different_lengths();
     //test_LCS_different_lengths(3, 200000, 2000, 500);
     //test_LCS_different_lengths(3, 50, 2000, 1, 3);
+    //performance_comparison();
+    sdsl::csa_bitcompressed csa, csa_r;
+    string s = "abacadabra";
+    construct_im(csa, s, 1);
+    std::reverse(s.begin(), s.end());
+    construct_im(csa_r, s, 1);
+    std::reverse(s.begin(), s.end());
+
+    cout << "sa: ";
+    for (int i = 0; i <= s.size(); i++) {
+        cout << csa[i] << ' ';
+    }
+    cout << '\n';
+
+    cout << "isa: ";
+    for (int i = 0; i <= s.size(); i++) {
+        cout << csa.isa[i] << ' ';
+    }
+    cout << '\n';
+
+    cout << "isa_r: ";
+    for (int i = 0; i <= s.size(); i++) {
+        cout << csa_r.isa[i] << ' ';
+    }
+    cout << '\n';
+    MaxBlockDecomposition mbd("", "abacadabra");
+
     /*string s = "";
     for (int i = 0; i < 1000000; i++) { //1MB
         s += randint('a', 'z');
     }
     MaxBlockDecomposition mbd("", s, true);*/
-
-    test_longest_consume_slices();
+    //test_fuse_substrings();
+    //test_range_search_2d();
     //test_leaf_index();
     //performance_comparison();
 }

@@ -1,13 +1,14 @@
 #include <unordered_map>
 #include <utility>
-#include "range-tree/RangeTree.h"
 
 using std::unordered_map;
 using std::pair;
 using std::vector;
+using sdsl::wt_int;
 
 #include "global.hpp"
 #include "longest_consume.cpp"
+#include "sdsl/wt_int.hpp"
 
 #ifndef HIA_CPP
 #define HIA_CPP
@@ -18,7 +19,7 @@ struct Void {
         return false;
     }
 };
-using HIA_RangeTree = RangeTree::RangeTree<unsigned long, Void>;
+using HIAInducedIndex = wt_int<>;
 
 struct TwoSet {
     unordered_map<int, int> counts;
@@ -76,13 +77,17 @@ unsigned long reverse_cst_label_mapper(const CST &T, Node node, unsigned long si
     return T.depth(node);
 }
 
-//Get a RangeTree representing all leaves from the 2 trees with the same labels
+//Gets a wavelet tree representing all leaves from the 2 trees with the same labels
 //a point (x, y) existing in the tree means that T1_mapper of leaf #x and T2 mapper of leaf #y are equal
 //in other words, leaf number x and leaf number y have the same label once mapped
 template<label_mapper T1_mapper, label_mapper T2_mapper>
-HIA_RangeTree get_range_tree(const CST &T1, const CST &T2, long length) {
-    vector<RangeTree::Point<unsigned long, Void>> points;
-    unordered_map<unsigned long, unsigned long> T1_mapping;
+HIAInducedIndex get_induced_index_(const CST &T1, const CST &T2, long length) {
+    //format: values[t1_value] = t2_value
+    //NOTE: specifying a fixed integer width for the int_vector here bugs it out
+    //idk why
+    sdsl::int_vector<> values(length+1);
+    //vector<uint32_t> values(length);
+    unordered_map<uint32_t, uint32_t> T1_mapping;
     auto rb = T1.rb(T1.root());
     for (auto i = T1.lb(T1.root()); i <= rb; i++) {
         auto mapped = T1_mapper(T1, T1.select_leaf(i+1), length);
@@ -93,7 +98,7 @@ HIA_RangeTree get_range_tree(const CST &T1, const CST &T2, long length) {
     for (auto i = T2.lb(T2.root()); i <= rb; i++) {
         auto mapped = T2_mapper(T2, T2.select_leaf(i+1), length);
         auto T1_leaf = T1_mapping[mapped];
-        points.push_back(RangeTree::Point<unsigned long, Void>({T1_leaf, i}, {}));
+        values[T1_leaf] = i;
         //debug_print_node(T1, T1.select_leaf(T1_leaf+1));
         //debug_print_node(T2, T2.select_leaf(i+1));
         //cout << '\n';
@@ -101,23 +106,38 @@ HIA_RangeTree get_range_tree(const CST &T1, const CST &T2, long length) {
     //free up memory
     T1_mapping.clear();
 
-    cout << "calculated range tree points" << std::endl;
-    HIA_RangeTree tree(points);
-    return tree;
-}
-//plan:
+    //cout << "calculated range tree points" << std::endl;
+    cout << "values: ";
+    for (auto i : values) {
+        cout << i << ' ';
+    }
+    cout << '\n';
+    HIAInducedIndex index;
+    construct_im(index, values);
 
-HIA_RangeTree get_hia_range_tree(const CST &T_R, const CST &T, long length) {
-    return get_range_tree<reverse_cst_label_mapper, cst_label_mapper>(T_R, T, length);
+    return index;
 }
 
-bool is_induced(const HIA_RangeTree &rt, const CST &T1, const CST &T2, Node u, Node v) {
-    return rt.countInRange(
+HIAInducedIndex get_induced_index(const CST &T_R, const CST &T, long length) {
+    return get_induced_index_<reverse_cst_label_mapper, cst_label_mapper>(T_R, T, length);
+}
+
+bool is_induced(const HIAInducedIndex &index, const CST &T1, const CST &T2, Node u, Node v) {
+    //debug_print_node(T1, u);
+    //debug_print_node(T2, v);
+    //cout << "args " << T1.lb(u) << ' ' << T1.rb(u) << ' ' << T2.lb(v) << ' ' << T2.rb(v) << '\n';
+    auto result = index.range_search_2d(T1.lb(u), T1.rb(u), T2.lb(v), T2.rb(v), true);
+    //for (auto point : result.second) {
+    //    cout << point << '\n';
+    //}
+    //auto result = index.range_search_2d(T2.lb(v), T2.rb(v), T1.lb(u), T1.rb(u), false);
+    return result.first > 0;
+    /*return rt.countInRange(
         {T1.lb(u), T2.lb(v)},
         {T1.rb(u), T2.rb(v)},
         {true, true},
         {true, true}
-    ) > 0;
+    ) > 0;*/
 }
 
 template<label_mapper mapper>
@@ -153,7 +173,7 @@ Node select_leaf(CST T, long i) {
 }
 
 template<label_mapper T1_mapper, label_mapper T2_mapper>
-HIAResult dummy_HIA(const HIA_RangeTree &rt, CST &T1, CST &T2, Node u, Node v, long u_length, long v_length, long length) {
+HIAResult dummy_HIA(const HIAInducedIndex &index, const CST &T1, const CST &T2, Node u, Node v, long u_length, long v_length, long length) {
     Node t2_root = T2.root();
 
     vector<Node> v_path;
@@ -175,7 +195,7 @@ HIAResult dummy_HIA(const HIA_RangeTree &rt, CST &T1, CST &T2, Node u, Node v, l
     auto u_depth = T1.depth(u_temp);
     bool u_depth_dirty = false;
     while (true) {
-        if (is_induced(rt, T1, T2, u_temp, v_temp)) {
+        if (is_induced(index, T1, T2, u_temp, v_temp)) {
             if (u_depth_dirty) {
                 u_depth = T1.depth(u_temp);
                 u_depth_dirty = false;
@@ -280,7 +300,7 @@ Node go_up(const CST &T, Node leaf, long min_depth) {
     return node;
 }
 
-pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, long t_len, Slice u, Slice v) {
+pair<long, long> fuse_substrings_HIA(const HIAInducedIndex &index, const CST &T, const CST &T_R, long t_len, Slice u, Slice v) {
     //figure out the start position of u in the reversed string, 0 indexed
     long u_start_rev = t_len - u.end - 1;
 
@@ -304,7 +324,7 @@ pair<long, long> fuse_substrings_HIA(const HIA_RangeTree &rt, CST &T, CST &T_R, 
     //debug_print_node(T, v_node);
 
     HIAResult result = dummy_HIA<reverse_cst_label_mapper, cst_label_mapper>(
-        rt, T_R, T, u_rev_node, v_node, u.size(), v.size(), t_len
+        index, T_R, T, u_rev_node, v_node, u.size(), v.size(), t_len
     );
 
     //cout << "sum" << result.sum << '\n';
@@ -348,13 +368,13 @@ void test_fuse_substrings() {
     string s_r = s;
     reverse(s_r.begin(), s_r.end());
     construct_im(cst_r, s_r, 1);
-    HIA_RangeTree rt = get_hia_range_tree(cst_r, cst, s.size());
+    HIAInducedIndex index = get_induced_index(cst_r, cst, s.size());
     int testnum = 0;
     auto test = [&](Slice u, Slice v) {
         testnum++;
         auto ans = fuse_substrings(cst, cst_r, s, u, v, T_ci);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
-        ans = fuse_substrings_HIA(rt, cst, cst_r, s.size(), u, v);
+        ans = fuse_substrings_HIA(index, cst, cst_r, s.size(), u, v);
         cout << "Test " << testnum << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans << '\n';
     };
 
@@ -373,7 +393,7 @@ void test_fuse_substrings() {
 void test_fuse_substrings_auto() {
     int RUNS_PER_STRING = 1000;
     for (int i = 0; i < 100; i++) {
-        int length = randint(7, 150);
+        int length = randint(7, 20);
         string s = "";
         for (int j = 0; j < length; j++) {
             s += (char) randint('a', 'c');
@@ -386,7 +406,7 @@ void test_fuse_substrings_auto() {
         string s_r = s;
         reverse(s_r.begin(), s_r.end());
         construct_im(cst_r, s_r, 1);
-        HIA_RangeTree rt = get_hia_range_tree(cst, cst_r, s.size());
+        HIAInducedIndex rt = get_induced_index(cst_r, cst, s.size());
 
 
         for (int j = 0; j < RUNS_PER_STRING; j++) {
@@ -401,9 +421,47 @@ void test_fuse_substrings_auto() {
 
             if (base_len != hia_len) {
                 cout << "FAIL\n";
-                cout << "Test " << (i*RUNS_PER_STRING + j) << ": " << u.apply(s) << " + " << v.apply(s) << " = " << ans_base << "or" << ans_hia << '\n';
-                break;
+                cout << "Test " << (i*RUNS_PER_STRING + j) << ": \n";
+                cout << s << '\n';
+                cout << u.apply(s) << " + " << v.apply(s) << " = " << ans_base << "or" << ans_hia << '\n';
+                return;
             }
+        }
+    }
+
+    cout << "PASS\n";
+}
+
+void test_range_search_2d() {
+    int size = 100;
+    sdsl::int_vector<> array(size, 0);
+    for (int i = 0; i < size; i++) {
+        array[i] = randint(0, size-1);
+    }
+    wt_int wavelet;
+    construct_im(wavelet, array);
+
+    for (int q = 0; q < 1000; q++) {
+        Slice indicies = randslice(size-1);
+        int i_l = indicies.start;
+        int i_r = indicies.end;
+
+        Slice values = randslice(size-1);
+        int v_l = values.start;
+        int v_r = values.end;
+
+        int ans_ref = 0;
+        for (int i = i_l; i <= i_r; i++) {
+            if (array[i] >= v_l && array[i] <= v_r) {
+                ans_ref++;
+            }
+        }
+
+        int ans_test = wavelet.range_search_2d(i_l, i_r, v_l, v_r, false).first;
+
+        if (ans_test != ans_ref) {
+            cout << "FAIL\n";
+            cout << "Expected " << ans_ref << " Got " << ans_test << "\n\n";
         }
     }
 

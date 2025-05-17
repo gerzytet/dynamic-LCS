@@ -108,7 +108,7 @@ Slice longest_consume_slice(const CST &T, string_view s, long len, ChildIndex &c
                 if (index == 0) {
                     return {-1, -1};
                 }
-                long start = len - T.depth(T.leftmost_leaf(child)); + 1;
+                long start = len - T.depth(T.leftmost_leaf(child)) + 1;
                 long end = start + index - 1;
                 return {start, end};
             }

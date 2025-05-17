@@ -2,6 +2,7 @@ import sys
 import random
 from PySide6 import QtCore, QtWidgets, QtGui
 import socket
+import datetime
 
 #single line search result, with matched text highlighted
 class SearchResult(QtWidgets.QWidget):
@@ -60,7 +61,10 @@ class MyWidget(QtWidgets.QWidget):
         self.prev_text = text
         print("diff:", diff)
         s.sendall((diff + '\n').encode())
+        curr_time = datetime.datetime.now()
         reply = get_reply()
+        time_diff = datetime.datetime.now() - curr_time
+        print("time diff:", time_diff)
         results = search_results_from_reply(reply)
         for result in self.results:
             result.deleteLater()
