@@ -86,32 +86,16 @@ HIAInducedIndex get_induced_index_(const CST &T1, const CST &T2, long length) {
     //NOTE: specifying a fixed integer width for the int_vector here bugs it out
     //idk why
     sdsl::int_vector<> values(length+1);
-    //vector<uint32_t> values(length);
-    unordered_map<uint32_t, uint32_t> T1_mapping;
-    auto rb = T1.rb(T1.root());
-    for (auto i = T1.lb(T1.root()); i <= rb; i++) {
-        auto mapped = T1_mapper(T1, T1.select_leaf(i+1), length);
-        T1_mapping[mapped] = i;
+
+    auto T1_iter = T1.csa.isa.begin();
+    auto T2_iter = --T2.csa.isa.end();
+    for (long i = 0; i <= length; i++) {
+        values[*T1_iter] = *T2_iter;
+
+        T1_iter++;
+        T2_iter--;
     }
 
-    rb = T2.rb(T2.root());
-    for (auto i = T2.lb(T2.root()); i <= rb; i++) {
-        auto mapped = T2_mapper(T2, T2.select_leaf(i+1), length);
-        auto T1_leaf = T1_mapping[mapped];
-        values[T1_leaf] = i;
-        //debug_print_node(T1, T1.select_leaf(T1_leaf+1));
-        //debug_print_node(T2, T2.select_leaf(i+1));
-        //cout << '\n';
-    }
-    //free up memory
-    T1_mapping.clear();
-
-    //cout << "calculated range tree points" << std::endl;
-    cout << "values: ";
-    for (auto i : values) {
-        cout << i << ' ';
-    }
-    cout << '\n';
     HIAInducedIndex index;
     construct_im(index, values);
 
@@ -263,15 +247,6 @@ leaf_index build_leaf_index(const CST &T, long size) {
         }
     }
     return index;
-}
-
-Node find_leaf_of_depth(const CST &T, long depth) {
-    long suffix_index = T.rb(T.root()) - depth + 1;
-    long suffix_order = T.csa.isa[suffix_index];
-    if (depth == 1) {
-        return T.child(T.root(), '\0');
-    }
-    return T.select_leaf(suffix_order + 1);
 }
 
 void test_leaf_index() {

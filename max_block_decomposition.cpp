@@ -383,6 +383,7 @@ class MaxBlockDecomposition {
                     len = 1;
                 }
                 if (len < curr_slice.size()) {
+                    cout << "len < size\n";
                     iter = insert_and_recalc(next, curr_start+len);
                 }
                 else if (len == curr_slice.size()) {

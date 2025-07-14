@@ -61,6 +61,15 @@ class ChildIndex {
     #define LOOKUP_CHILD(T, child_index, node, c) T.child(node, c)
 #endif
 
+Node find_leaf_of_depth(const CST &T, long depth) {
+    long suffix_index = T.rb(T.root()) - depth + 1;
+    long suffix_order = T.csa.isa[suffix_index];
+    if (depth == 1) {
+        return T.child(T.root(), '\0');
+    }
+    return T.select_leaf(suffix_order + 1);
+}
+
 //return the length of the prefix from s that T can consume
 long longest_consume(const CST &T, const string &s, const ChildIndex &child_index) {
     long index = 0;
@@ -86,9 +95,9 @@ long longest_consume(const CST &T, const string &s, const ChildIndex &child_inde
 
 //len is length of t
 //return the prefix from s that T can consume as a slice
-Slice longest_consume_slice(const CST &T, string_view s, long len, ChildIndex &child_index) {
+Slice longest_consume_slice(const CST &T, string_view s, long len, ChildIndex &child_index, Node start_node) {
     long index = 0;
-    Node node = T.root();
+    Node node = start_node;
     while (index < s.size()) {
         //Node child = T.child(node, s[index]);
         Node child = LOOKUP_CHILD(T, child_index, node, s[index]);
@@ -121,6 +130,10 @@ Slice longest_consume_slice(const CST &T, string_view s, long len, ChildIndex &c
     long start = len - T.depth(T.leftmost_leaf(node)) + 1;
     long end = start + index - 1;
     return {start, end};
+}
+
+Slice longest_consume_slice(const CST &T, string_view s, long len, ChildIndex &child_index) {
+    return longest_consume_slice(T, s, len, child_index, T.root());
 }
 
 //len is length of t
