@@ -141,30 +141,31 @@ unrooted_LCP_t build_unrooted_LCP(CST &T) {
     return idx;
 }
 
-pair<Node, long> unrooted_LCP(unrooted_LCP_t &index, CST &T, Node root, Node pattern) {
+long unrooted_LCP(unrooted_LCP_t &index, CST &T, Node root, Node pattern) {
     auto iter = index.rooted_LCPs.find(root);
     if (iter != index.rooted_LCPs.end()) {
-        return rooted_LCP(T, (*iter).second, pattern);
+        return rooted_LCP(T, (*iter).second, pattern).second;
     }
     Node path_leaf = index.heavy_path_index[T.id(root)];
+    path_leaf = find_leaf_of_depth(T, T.depth(path_leaf) - T.depth(root));
     cout << "path leaf: ";
     debug_print_node(T, path_leaf);
     Node h = T.lca(path_leaf, pattern);
     cout << "H: ";
     debug_print_node(T, h);
     if (T.is_leaf(h)) {
-        return {h, T.depth(h)};
+        return T.depth(h);
     }
     char nextchar = T.edge(pattern, T.depth(h)+1);
     Node nextnode = T.child(h, nextchar);
     debug_print_node(T, nextnode);
     if (nextnode == T.root()) {
-        return {h, T.depth(h)};
+        return T.depth(h);
     }
 
     auto res = unrooted_LCP(index, T, nextnode, pattern);
 
-    return {res.first, res.second + T.depth(nextnode)};
+    return res + T.depth(nextnode);
 }
 
 void baseline_rlcp(CST &T, Node root, Node pattern) {
@@ -181,10 +182,13 @@ long fuse_slices_unrooted_LCP(unrooted_LCP_t index, CST &T, Slice s1, Slice s2) 
     debug_print_node(T, pattern);
     rooted_LCP_t rlcp = index.rooted_LCPs[T.id(T.root())];
     Node root = go_up(T, find_leaf_of_depth(T, T.rb(T.root()) - s1.start + 1), s1.size());
+    while (T.depth(root) > s1.size()) {
+        root = T.parent(root);
+    }
     cout << "root: ";
     debug_print_node(T, root);
     auto ans = unrooted_LCP(index, T, root, pattern);
-    long depth = ans.second;
+    long depth = ans;
     depth -= T.depth(root);
     depth = max(depth, 0L);
     depth = min(depth, s2.size());
@@ -210,7 +214,8 @@ void test_fuse_prefix_LCP() {
 
     unrooted_LCP_t index = build_unrooted_LCP(T);
     Slice testcases[] = {
-        Slice{0, 1}, Slice{4, 6}
+        Slice{0, 1}, Slice{4, 6},
+        Slice{5, 6}, Slice{0, 2}
     };
     for (int i = 0; i < sizeof(testcases)/(sizeof(Slice)*2); i++) {
         test(testcases[i*2], testcases[i*2+1], s, T, index);
