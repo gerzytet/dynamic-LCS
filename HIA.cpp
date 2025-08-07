@@ -65,7 +65,7 @@ void debug_print_node(const CST &T, Node node) {
         char c = T.edge(node, i+1);
         cout << (c ? c : '$');
     }
-    cout << '\n';
+    cout << ", " << T.id(node) << '\n';
 }
 
 typedef unsigned long(*label_mapper)(const CST &T, Node node, unsigned long length);

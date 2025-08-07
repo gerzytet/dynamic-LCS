@@ -5,6 +5,7 @@ using std::cout;
 #include "max_block_decomposition.cpp"
 #include "rand_utils.cpp"
 #include "G4G_LCS.cpp"
+#include "LCP.cpp"
 
 void test_replace() {
     int RUNS_PER_STRING = 1000;
@@ -221,7 +222,7 @@ int main() {
     //mbd.print();
     //test_fuse_substrings_auto();
     //test_initial_blocks_different_lengths();
-    test_LCS_different_lengths(3, 200000, 2000, 500, 3);
+    //test_LCS_different_lengths(3, 200000, 2000, 500, 3);
     //test_LCS_different_lengths(3, 50, 2000, 1, 3);
     //performance_comparison();
     /*sdsl::csa_bitcompressed csa, csa_r;
@@ -260,4 +261,12 @@ int main() {
     //test_range_search_2d();
     //test_leaf_index();
     //performance_comparison();
+
+    /*CST T;
+    string s = "abacadabra";
+    construct_im(T, s, 1);
+    print_suffixes(T);
+    Node node = T.child(T.root(), 'a');
+    print_suffixes(T, node);*/
+    test_fuse_prefix_LCP();
 }
