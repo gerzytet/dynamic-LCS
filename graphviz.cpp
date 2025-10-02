@@ -27,6 +27,9 @@ string visualize_graphviz(CST &T) {
                 char c = T.edge(node, i);
                 label += (c ? c : '$');
             }
+            if (label.length() > 4 && label[label.length() - 1] == '$') {
+                label = label.substr(0, 1) + "..$";
+            }
             lines += get_line(T.id(parent), T.id(node), label);
         }
 
