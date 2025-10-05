@@ -1,3 +1,6 @@
+#ifndef LCP_CPP
+#define LCP_CPP
+
 #include <iostream>
 #include <utility>
 
@@ -11,13 +14,11 @@ using std::cout;
 using std::pair;
 
 void debug_print_node_no_newline(const CST &T, Node node) {
-    T.child()
     for (int i = 0; i < T.depth(node); i++) {
         char c = T.edge(node, i+1);
         cout << (c ? c : '$');
     }
 }
-
 
 void print_suffixes(CST T) {
     auto root = T.root();
@@ -40,69 +41,13 @@ void print_suffixes(CST T, Node root) {
     }
 }
 
-struct rooted_LCP_t {
-    Heap<Node> leaves;
-    Node root;
-};
-
-//plan:
-//first, display each suffix along with its order
-//then, for the subtree, display the NEW suffix indicies
-//next, work on the actual rooted LCP index
-//rooted LCP index will contain a heap with all the new orders
-//add predecessor and successor queries to the heap so that this works
-rooted_LCP_t build_rooted_LCP(CST T, Node root) {
-    rooted_LCP_t rlcp;
-    rlcp.root = root;
-    for (long i = T.lb(root); i <= T.rb(root); i++) {
-        auto leaf = T.select_leaf(i+1);
-        Node new_leaf = find_leaf_of_depth(T, T.depth(leaf) - T.depth(root));
-        rlcp.leaves.add(new_leaf);
-    }
-
-    return rlcp;
-}
-
-//the approximate node of the answer, and the depth of the answer
-//depth(pair[0]) <= pair[1]
-pair<Node, long> rooted_LCP(CST &T, rooted_LCP_t &rlcp, Node pattern) {
-    auto sp_opt = rlcp.leaves.predecessor(pattern+1);
-    auto su_opt = rlcp.leaves.successor(pattern-1);
-    bool p_exist = sp_opt.has_value();
-    bool s_exist = su_opt.has_value();
-
-    Node v;
-    if (s_exist && p_exist) {
-        v = T.lca(sp_opt.value(), su_opt.value());
-    } else if (s_exist) {
-        v = sp_opt.value();
-    } else {
-        v = su_opt.value();
-    }
-
-    //now we need the node for pattern in the space of T
-    Node pattern_t = find_leaf_of_depth(T, T.depth(pattern) - T.depth(rlcp.root));
-    uint32_t h;
-    if (s_exist && p_exist) {
-        h = max(T.depth(T.lca(pattern_t, su_opt.value())), T.depth(T.lca(pattern_t, sp_opt.value())));
-    } else {
-        h = T.lca(pattern_t, v);
-    }
-
-    //ans is node at or right below the real answer
-    Node ans = go_up(T, v, h);
-    return {ans, h};
-}
-
 struct unrooted_LCP_t {
-    unordered_map<Node, rooted_LCP_t> rooted_LCPs;
     //an index representing the heavy path decomposition
     //index[id(n)] = the leaf node at the end of the heavy path that starts with n
     sdsl::int_vector<32> heavy_path_index;
 };
 
 void _build_unrooted_LCP(CST &T, Node node, unrooted_LCP_t &idx) {
-    idx.rooted_LCPs[T.id(node)] = build_rooted_LCP(T, node);
     vector<Node> path;
     path.push_back(node);
     while (!T.is_leaf(node)) {
@@ -160,6 +105,53 @@ long unrooted_LCP(unrooted_LCP_t &index, CST &T, Node root, Node pattern, int ro
     return T.depth(h);
 }
 
+Slice conv_LCP_result_to_slice(CST &T, Node root, long depth) {
+    long rb_root = T.rb(T.root());
+    long dep = T.depth(T.leftmost_leaf(root));
+    long start =  rb_root - dep + 1;
+    return Slice{start, start+depth-1};
+}
+
+Slice unrooted_LCP_2(unrooted_LCP_t &index, CST &T, Node root, Node pattern, int root_length, int iteration=1) {
+    //cout << "iteration " << iteration << '\n';
+    //cout << "root ";
+    //debug_print_node(T, root);
+    //cout << "root depth: " << root_length << '\n';
+    Node path_leaf = index.heavy_path_index[T.id(root)];
+    //cout << "heavy path leaf: ";
+    //debug_print_node(T, path_leaf);
+    Node path_leaf_trunc = find_leaf_of_depth(T, T.depth(path_leaf) - root_length);
+    //cout << "truncated heavy path leaf: ";
+    //debug_print_node(T, path_leaf_trunc);
+    //cout << "pattern: ";
+    //debug_print_node(T, pattern);
+
+    Node lca = T.lca(path_leaf_trunc, pattern);
+    //cout << "lca: ";
+    //debug_print_node(T, lca);
+    if (T.root() == lca) {
+        return conv_LCP_result_to_slice(T, root, root_length);
+    }
+
+    if (pattern == lca) {
+        return conv_LCP_result_to_slice(T, path_leaf, T.depth(path_leaf));
+    }
+
+    long lca_depth = T.depth(lca);
+    //find new root
+    int new_root_length = root_length + lca_depth;
+    Node new_root = go_up(T, path_leaf, new_root_length);
+    Node new_pattern = find_leaf_of_depth(T, T.depth(pattern) - lca_depth);
+    return unrooted_LCP_2(
+        index,
+        T,
+        new_root,
+        new_pattern,
+        new_root_length,
+        iteration+1
+    );
+}
+
 /*void baseline_rlcp(CST &T, Node root, Node pattern) {
     for (long i = T.lb(root); i <= T.rb(root); i++) {
         auto leaf = T.select_leaf(i+1);
@@ -167,9 +159,8 @@ long unrooted_LCP(unrooted_LCP_t &index, CST &T, Node root, Node pattern, int ro
 }*/
 
 //returns length of final string
-long fuse_slices_unrooted_LCP(unrooted_LCP_t index, CST &T, Slice s1, Slice s2) {
+Slice fuse_slices_unrooted_LCP(unrooted_LCP_t &index, CST &T, Slice s1, Slice s2) {
     Node pattern = find_leaf_of_depth(T, T.rb(T.root()) - s2.start + 1);
-    rooted_LCP_t rlcp = index.rooted_LCPs[T.id(T.root())];
     Node root = go_up(T, find_leaf_of_depth(T, T.rb(T.root()) - s1.start + 1), s1.size());
     /*while (T.depth(root) > s1.size()) {
         root = T.parent(root);
@@ -179,18 +170,19 @@ long fuse_slices_unrooted_LCP(unrooted_LCP_t index, CST &T, Slice s1, Slice s2) 
     cout << "pattern: ";
     debug_print_node(T, pattern);
 
-    auto ans = unrooted_LCP(index, T, root, pattern, s1.size());
-    ans = min(ans, s2.size());
+    auto ans = unrooted_LCP_2(index, T, root, pattern, s1.size());
+    if (ans.size() > s1.size()+s2.size()) {
+        return Slice{ans.start, ans.start+s1.size()+s2.size()-1};
+    }
 
     return ans;
 }
 
-
 void test(Slice s1, Slice s2, string s, CST &T, unrooted_LCP_t &index) {
     cout << "str 1: " << s1.apply(s) << '\n';
     cout << "str 2: " << s2.apply(s) << '\n';
-    long ans = fuse_slices_unrooted_LCP(index, T, s1, s2);
-    cout << "len: " << ans << "\n\n";
+    Slice ans = fuse_slices_unrooted_LCP(index, T, s1, s2);
+    cout << "slice: " << ans.apply(s) << "\n\n";
 }
 
 void test_fuse_prefix_LCP() {
@@ -213,3 +205,5 @@ void test_fuse_prefix_LCP() {
         test(testcases[i*2], testcases[i*2+1], s, T, index);
     }
 }
+
+#endif
